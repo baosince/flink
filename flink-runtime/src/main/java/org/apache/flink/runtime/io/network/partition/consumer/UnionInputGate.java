@@ -86,9 +86,6 @@ public class UnionInputGate extends InputGate {
 	 */
 	private final Map<InputGate, Integer> inputGateToIndexOffsetMap;
 
-	/** Flag indicating whether partitions have been requested. */
-	private boolean requestedPartitionsFlag;
-
 	public UnionInputGate(InputGate... inputGates) {
 		this.inputGates = checkNotNull(inputGates);
 		checkArgument(inputGates.length > 1, "Union input gate should union at least two input gates.");
@@ -101,7 +98,7 @@ public class UnionInputGate extends InputGate {
 		synchronized (inputGatesWithData) {
 			for (InputGate inputGate : inputGates) {
 				if (inputGate instanceof UnionInputGate) {
-					// if we want to add support for this, we need to implement pollNextBufferOrEvent()
+					// if we want to add support for this, we need to implement pollNext()
 					throw new UnsupportedOperationException("Cannot union a union of input gates.");
 				}
 
@@ -137,40 +134,17 @@ public class UnionInputGate extends InputGate {
 	}
 
 	@Override
-	public String getOwningTaskName() {
-		// all input gates have the same owning task
-		return inputGates[0].getOwningTaskName();
-	}
-
-	@Override
 	public boolean isFinished() {
-		for (InputGate inputGate : inputGates) {
-			if (!inputGate.isFinished()) {
-				return false;
-			}
-		}
-
-		return true;
+		return inputGatesWithRemainingData.isEmpty();
 	}
 
 	@Override
-	public void requestPartitions() throws IOException, InterruptedException {
-		if (!requestedPartitionsFlag) {
-			for (InputGate inputGate : inputGates) {
-				inputGate.requestPartitions();
-			}
-
-			requestedPartitionsFlag = true;
-		}
-	}
-
-	@Override
-	public Optional<BufferOrEvent> getNextBufferOrEvent() throws IOException, InterruptedException {
+	public Optional<BufferOrEvent> getNext() throws IOException, InterruptedException {
 		return getNextBufferOrEvent(true);
 	}
 
 	@Override
-	public Optional<BufferOrEvent> pollNextBufferOrEvent() throws IOException, InterruptedException {
+	public Optional<BufferOrEvent> pollNext() throws IOException, InterruptedException {
 		return getNextBufferOrEvent(false);
 	}
 
@@ -178,9 +152,6 @@ public class UnionInputGate extends InputGate {
 		if (inputGatesWithRemainingData.isEmpty()) {
 			return Optional.empty();
 		}
-
-		// Make sure to request the partitions, if they have not been requested before.
-		requestPartitions();
 
 		Optional<InputWithData<InputGate, BufferOrEvent>> next = waitAndGetNextData(blocking);
 		if (!next.isPresent()) {
@@ -207,13 +178,13 @@ public class UnionInputGate extends InputGate {
 			// In case of inputGatesWithData being inaccurate do not block on an empty inputGate, but just poll the data.
 			// Do not poll the gate under inputGatesWithData lock, since this can trigger notifications
 			// that could deadlock because of wrong locks taking order.
-			Optional<BufferOrEvent> bufferOrEvent = inputGate.get().pollNextBufferOrEvent();
+			Optional<BufferOrEvent> bufferOrEvent = inputGate.get().pollNext();
 
 			synchronized (inputGatesWithData) {
 				if (bufferOrEvent.isPresent() && bufferOrEvent.get().moreAvailable()) {
 					// enqueue the inputGate at the end to avoid starvation
 					inputGatesWithData.add(inputGate.get());
-				} else {
+				} else if (!inputGate.get().isFinished()) {
 					inputGate.get().isAvailable().thenRun(() -> queueInputGate(inputGate.get()));
 				}
 
@@ -254,7 +225,19 @@ public class UnionInputGate extends InputGate {
 				throw new IllegalStateException("Couldn't find input gate in set of remaining " +
 					"input gates.");
 			}
+			if (isFinished()) {
+				markAvailable();
+			}
 		}
+	}
+
+	private void markAvailable() {
+		CompletableFuture<?> toNotfiy;
+		synchronized (inputGatesWithData) {
+			toNotfiy = isAvailable;
+			isAvailable = AVAILABLE;
+		}
+		toNotfiy.complete(null);
 	}
 
 	@Override
@@ -262,19 +245,6 @@ public class UnionInputGate extends InputGate {
 		for (InputGate inputGate : inputGates) {
 			inputGate.sendTaskEvent(event);
 		}
-	}
-
-	@Override
-	public int getPageSize() {
-		int pageSize = -1;
-		for (InputGate gate : inputGates) {
-			if (pageSize == -1) {
-				pageSize = gate.getPageSize();
-			} else if (gate.getPageSize() != pageSize) {
-				throw new IllegalStateException("Found input gates with different page sizes.");
-			}
-		}
-		return pageSize;
 	}
 
 	@Override

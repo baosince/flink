@@ -20,6 +20,7 @@ package org.apache.flink.runtime.io.network.netty;
 
 import org.apache.flink.runtime.io.network.ConnectionID;
 import org.apache.flink.runtime.io.network.ConnectionManager;
+import org.apache.flink.runtime.io.network.PartitionRequestClient;
 import org.apache.flink.runtime.io.network.TaskEventPublisher;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionProvider;
 
@@ -55,9 +56,10 @@ public class NettyConnectionManager implements ConnectionManager {
 	}
 
 	@Override
-	public void start() throws IOException {
+	public int start() throws IOException {
 		client.init(nettyProtocol, bufferPool);
-		server.init(nettyProtocol, bufferPool);
+
+		return server.init(nettyProtocol, bufferPool);
 	}
 
 	@Override
@@ -74,15 +76,6 @@ public class NettyConnectionManager implements ConnectionManager {
 	@Override
 	public int getNumberOfActiveConnections() {
 		return partitionRequestClientFactory.getNumberOfActiveClients();
-	}
-
-	@Override
-	public int getDataPort() {
-		if (server != null && server.getLocalAddress() != null) {
-			return server.getLocalAddress().getPort();
-		} else {
-			return -1;
-		}
 	}
 
 	@Override

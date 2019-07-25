@@ -18,26 +18,11 @@
 
 package org.apache.flink.table.catalog.hive;
 
-import org.apache.flink.api.common.typeinfo.BasicArrayTypeInfo;
-import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
-import org.apache.flink.api.common.typeinfo.SqlTimeTypeInfo;
-import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.table.api.TableSchema;
-import org.apache.flink.table.catalog.CatalogDatabase;
-import org.apache.flink.table.catalog.CatalogFunction;
-import org.apache.flink.table.catalog.CatalogTable;
+import org.apache.flink.table.catalog.CatalogPartition;
 import org.apache.flink.table.catalog.CatalogTestBase;
-import org.apache.flink.table.catalog.CatalogView;
-import org.apache.flink.table.catalog.GenericCatalogDatabase;
-import org.apache.flink.table.catalog.GenericCatalogFunction;
-import org.apache.flink.table.catalog.GenericCatalogTable;
-import org.apache.flink.table.catalog.GenericCatalogView;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.util.HashMap;
 
 /**
  * Test for HiveCatalog on generic metadata.
@@ -45,142 +30,130 @@ import java.util.HashMap;
 public class HiveCatalogGenericMetadataTest extends CatalogTestBase {
 
 	@BeforeClass
-	public static void init() throws IOException {
+	public static void init() {
 		catalog = HiveTestUtils.createHiveCatalog();
 		catalog.open();
 	}
 
-	// ------ data types ------
+	// ------ partitions ------
 
 	@Test
-	public void testDataTypes() throws Exception {
-		// TODO: the following Hive types are not supported in Flink yet, including CHAR, VARCHAR, DECIMAL, MAP, STRUCT
-		//	  [FLINK-12386] Support complete mapping between Flink and Hive data types
-		TypeInformation[] types = new TypeInformation[] {
-			BasicTypeInfo.BYTE_TYPE_INFO,
-			BasicTypeInfo.SHORT_TYPE_INFO,
-			BasicTypeInfo.INT_TYPE_INFO,
-			BasicTypeInfo.LONG_TYPE_INFO,
-			BasicTypeInfo.FLOAT_TYPE_INFO,
-			BasicTypeInfo.DOUBLE_TYPE_INFO,
-			BasicTypeInfo.BOOLEAN_TYPE_INFO,
-			BasicTypeInfo.STRING_TYPE_INFO,
-			BasicArrayTypeInfo.BYTE_ARRAY_TYPE_INFO,
-			BasicTypeInfo.DATE_TYPE_INFO,
-			SqlTimeTypeInfo.TIMESTAMP
-		};
-
-		verifyDataTypes(types);
+	public void testCreatePartition() throws Exception {
 	}
 
-	private void verifyDataTypes(TypeInformation[] types) throws Exception {
-		String[] colNames = new String[types.length];
+	@Test
+	public void testCreatePartition_TableNotExistException() throws Exception {
+	}
 
-		for (int i = 0; i < types.length; i++) {
-			colNames[i] = types[i].toString().toLowerCase() + "_col";
-		}
+	@Test
+	public void testCreatePartition_TableNotPartitionedException() throws Exception {
+	}
 
-		CatalogTable table = new GenericCatalogTable(
-			new TableSchema(colNames, types),
-			getBatchTableProperties(),
-			TEST_COMMENT
-		);
+	@Test
+	public void testCreatePartition_PartitionSpecInvalidException() throws Exception {
+	}
 
-		catalog.createDatabase(db1, createDb(), false);
-		catalog.createTable(path1, table, false);
+	@Test
+	public void testCreatePartition_PartitionAlreadyExistsException() throws Exception {
+	}
 
-		checkEquals(table, (CatalogTable) catalog.getTable(path1));
+	@Test
+	public void testCreatePartition_PartitionAlreadyExists_ignored() throws Exception {
+	}
+
+	@Test
+	public void testDropPartition() throws Exception {
+	}
+
+	@Test
+	public void testDropPartition_TableNotExist() throws Exception {
+	}
+
+	@Test
+	public void testDropPartition_TableNotPartitioned() throws Exception {
+	}
+
+	@Test
+	public void testDropPartition_PartitionSpecInvalid() throws Exception {
+	}
+
+	@Test
+	public void testDropPartition_PartitionNotExist() throws Exception {
+	}
+
+	@Test
+	public void testDropPartition_PartitionNotExist_ignored() throws Exception {
+	}
+
+	@Test
+	public void testAlterPartition() throws Exception {
+	}
+
+	@Test
+	public void testAlterPartition_TableNotExist() throws Exception {
+	}
+
+	@Test
+	public void testAlterPartition_TableNotPartitioned() throws Exception {
+	}
+
+	@Test
+	public void testAlterPartition_PartitionSpecInvalid() throws Exception {
+	}
+
+	@Test
+	public void testAlterPartition_PartitionNotExist() throws Exception {
+	}
+
+	@Test
+	public void testAlterPartition_PartitionNotExist_ignored() throws Exception {
+	}
+
+	@Test
+	public void testGetPartition_TableNotExist() throws Exception {
+	}
+
+	@Test
+	public void testGetPartition_TableNotPartitioned() throws Exception {
+	}
+
+	@Test
+	public void testGetPartition_PartitionSpecInvalid_invalidPartitionSpec() throws Exception {
+	}
+
+	@Test
+	public void testGetPartition_PartitionSpecInvalid_sizeNotEqual() throws Exception {
+	}
+
+	@Test
+	public void testGetPartition_PartitionNotExist() throws Exception {
+	}
+
+	@Test
+	public void testPartitionExists() throws Exception {
+	}
+
+	@Test
+	public void testListPartitionPartialSpec() throws Exception {
+	}
+
+	@Override
+	public void testGetPartitionStats() throws Exception {
+	}
+
+	@Override
+	public void testAlterPartitionTableStats() throws Exception {
 	}
 
 	// ------ test utils ------
 
 	@Override
-	public CatalogDatabase createDb() {
-		return new GenericCatalogDatabase(
-			new HashMap<String, String>() {{
-				put("k1", "v1");
-			}},
-			TEST_COMMENT);
+	protected boolean isGeneric() {
+		return true;
 	}
 
 	@Override
-	public CatalogDatabase createAnotherDb() {
-		return new GenericCatalogDatabase(
-			new HashMap<String, String>() {{
-				put("k2", "v2");
-			}},
-			TEST_COMMENT);
-	}
-
-	@Override
-	public CatalogTable createTable() {
-		return new GenericCatalogTable(
-			createTableSchema(),
-			getBatchTableProperties(),
-			TEST_COMMENT);
-	}
-
-	@Override
-	public CatalogTable createAnotherTable() {
-		return new GenericCatalogTable(
-			createAnotherTableSchema(),
-			getBatchTableProperties(),
-			TEST_COMMENT);
-	}
-
-	@Override
-	public CatalogTable createStreamingTable() {
-		return new GenericCatalogTable(
-			createTableSchema(),
-			getStreamingTableProperties(),
-			TEST_COMMENT);
-	}
-
-	@Override
-	public CatalogTable createPartitionedTable() {
-		return new GenericCatalogTable(
-			createTableSchema(),
-			createPartitionKeys(),
-			getBatchTableProperties(),
-			TEST_COMMENT);
-	}
-
-	@Override
-	public CatalogTable createAnotherPartitionedTable() {
-		return new GenericCatalogTable(
-			createAnotherTableSchema(),
-			createPartitionKeys(),
-			getBatchTableProperties(),
-			TEST_COMMENT);
-	}
-
-	@Override
-	public CatalogView createView() {
-		return new GenericCatalogView(
-			String.format("select * from %s", t1),
-			String.format("select * from %s.%s", TEST_CATALOG_NAME, path1.getFullName()),
-			createTableSchema(),
-			new HashMap<>(),
-			"This is a view");
-	}
-
-	@Override
-	public CatalogView createAnotherView() {
-		return new GenericCatalogView(
-			String.format("select * from %s", t2),
-			String.format("select * from %s.%s", TEST_CATALOG_NAME, path2.getFullName()),
-			createAnotherTableSchema(),
-			new HashMap<>(),
-			"This is another view");
-	}
-
-	@Override
-	protected CatalogFunction createFunction() {
-		return new GenericCatalogFunction(MyScalarFunction.class.getName());
-	}
-
-	@Override
-	protected CatalogFunction createAnotherFunction() {
-		return new GenericCatalogFunction(MyOtherScalarFunction.class.getName());
+	public CatalogPartition createPartition() {
+		throw new UnsupportedOperationException();
 	}
 }

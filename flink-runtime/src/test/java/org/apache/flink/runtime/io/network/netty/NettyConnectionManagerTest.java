@@ -19,6 +19,7 @@
 package org.apache.flink.runtime.io.network.netty;
 
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.NettyShuffleEnvironmentOptions;
 import org.apache.flink.runtime.io.network.TaskEventDispatcher;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionManager;
 import org.apache.flink.util.NetUtils;
@@ -110,9 +111,9 @@ public class NettyConnectionManagerTest {
 
 		// Expected number of threads
 		Configuration flinkConfig = new Configuration();
-		flinkConfig.setInteger(NettyConfig.NUM_ARENAS, numberOfArenas);
-		flinkConfig.setInteger(NettyConfig.NUM_THREADS_CLIENT, 3);
-		flinkConfig.setInteger(NettyConfig.NUM_THREADS_SERVER, 4);
+		flinkConfig.setInteger(NettyShuffleEnvironmentOptions.NUM_ARENAS, numberOfArenas);
+		flinkConfig.setInteger(NettyShuffleEnvironmentOptions.NUM_THREADS_CLIENT, 3);
+		flinkConfig.setInteger(NettyShuffleEnvironmentOptions.NUM_THREADS_SERVER, 4);
 
 		NettyConfig config = new NettyConfig(
 				InetAddress.getLocalHost(),

@@ -172,9 +172,9 @@ case class OverCall(
 
     // check partitionBy expression keys are resolved field reference
     partitionBy.foreach {
-      case r: ResolvedFieldReference if r.resultType.isKeyType  =>
+      case r: PlannerResolvedFieldReference if r.resultType.isKeyType  =>
         ValidationSuccess
-      case r: ResolvedFieldReference =>
+      case r: PlannerResolvedFieldReference =>
         return ValidationFailure(s"Invalid PartitionBy expression: $r. " +
           s"Expression must return key type.")
       case r =>
@@ -299,9 +299,9 @@ case class PlannerTableFunctionCall(
 
   override def validateInput(): ValidationResult = {
     // check if not Scala object
-    checkNotSingleton(tableFunction.getClass)
+    UserFunctionsTypeHelper.validateNotSingleton(tableFunction.getClass)
     // check if class could be instantiated
-    checkForInstantiation(tableFunction.getClass)
+    UserFunctionsTypeHelper.validateInstantiation(tableFunction.getClass)
     // look for a signature that matches the input types
     val signature = parameters.map(_.resultType)
     val foundMethod = getUserDefinedMethod(tableFunction, "eval", typeInfoToClass(signature))

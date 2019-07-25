@@ -36,16 +36,22 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.FieldsDataType;
 import org.apache.flink.table.types.KeyValueDataType;
 import org.apache.flink.table.types.logical.LegacyTypeInformationType;
+import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampKind;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.TypeInformationAnyType;
+import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 import org.apache.flink.table.typeutils.TimeIndicatorTypeInfo;
 import org.apache.flink.table.typeutils.TimeIntervalTypeInfo;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.Preconditions;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.IntStream;
@@ -56,25 +62,30 @@ import static org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isRow
 
 /**
  * Converter between {@link TypeInformation} and {@link DataType} that reflects the behavior before
- * Flink 1.9. The conversion is a 1:1 mapping that allows back-and-forth conversion.
+ * Flink 1.9. The conversion is a 1:1 mapping that allows back-and-forth conversion. Note that nullability
+ * constraints might get lost during the back-and-forth conversion.
  *
  * <p>This converter only exists to still support deprecated methods that take or return {@link TypeInformation}.
  * Some methods will still support type information in the future, however, the future type information
- * support will integrate nicer with the new type stack. This converter reflects the old behavior that includes:
+ * support will integrate nicer with the new type stack.
  *
- * <p>Use old {@code java.sql.*} time classes for time data types.
+ * <p>This converter reflects the old behavior that includes:
  *
- * <p>Only support millisecond precision for timestamps or day-time intervals.
+ * <ul>
+ *   <li>Use old {@code java.sql.*} time classes for time data types.</li>
  *
- * <p>Do not support fractional seconds for the time type.
+ *   <li>Only support millisecond precision for timestamps or day-time intervals.</li>
  *
- * <p>Let variable precision and scale for decimal types pass through the planner.
+ *   <li>Let variable precision and scale for decimal types pass through the planner.</li>
  *
- * <p>Let POJOs, case classes, and tuples pass through the planner.
+ *   <li>Inconsistent nullability. Most types are nullable even though type information does not support it.</li>
  *
- * <p>Inconsistent nullability. Most types are nullable even though type information does not support it.
+ *   <li>Distinction between {@link BasicArrayTypeInfo} and {@link ObjectArrayTypeInfo}.</li>
  *
- * <p>Distinction between {@link BasicArrayTypeInfo} and {@link ObjectArrayTypeInfo}.
+ *   <li>Let POJOs, case classes, and tuples pass through the planner.</li>
+ * </ul>
+ *
+ * <p>Any changes here need to be applied to the legacy planner as well.
  */
 @Internal
 public final class LegacyTypeInfoDataTypeConverter {
@@ -91,6 +102,10 @@ public final class LegacyTypeInfoDataTypeConverter {
 		addMapping(Types.FLOAT, DataTypes.FLOAT().bridgedTo(Float.class));
 		addMapping(Types.DOUBLE, DataTypes.DOUBLE().bridgedTo(Double.class));
 		addMapping(Types.BIG_DEC, createLegacyType(LogicalTypeRoot.DECIMAL, Types.BIG_DEC));
+		addMapping(Types.LOCAL_DATE, DataTypes.DATE().bridgedTo(LocalDate.class));
+		addMapping(Types.LOCAL_TIME, DataTypes.TIME(0).bridgedTo(LocalTime.class));
+		addMapping(Types.LOCAL_DATE_TIME, DataTypes.TIMESTAMP(3).bridgedTo(LocalDateTime.class));
+		addMapping(Types.INSTANT, DataTypes.TIMESTAMP_WITH_LOCAL_TIME_ZONE(3).bridgedTo(Instant.class));
 		addMapping(Types.SQL_DATE, DataTypes.DATE().bridgedTo(java.sql.Date.class));
 		addMapping(Types.SQL_TIME, DataTypes.TIME(0).bridgedTo(java.sql.Time.class));
 		addMapping(Types.SQL_TIMESTAMP, DataTypes.TIMESTAMP(3).bridgedTo(java.sql.Timestamp.class));
@@ -175,12 +190,29 @@ public final class LegacyTypeInfoDataTypeConverter {
 			return convertToTimeAttributeTypeInfo((TimestampType) dataType.getLogicalType());
 		}
 
-		final TypeInformation<?> foundTypeInfo = dataTypeTypeInfoMap.get(dataType);
+		// check in the map but relax the nullability constraint as every not null data type can be
+		// stored in the corresponding nullable type information
+		final TypeInformation<?> foundTypeInfo = dataTypeTypeInfoMap.get(dataType.nullable());
 		if (foundTypeInfo != null) {
 			return foundTypeInfo;
 		}
 
-		if (canConvertToLegacyTypeInfo(dataType)) {
+		// we are relaxing the constraint for DECIMAL, CHAR, TIMESTAMP_WITHOUT_TIME_ZONE to
+		// support value literals in legacy planner
+		LogicalType logicalType = dataType.getLogicalType();
+		if (hasRoot(logicalType, LogicalTypeRoot.DECIMAL)) {
+			return Types.BIG_DEC;
+		}
+
+		else if (hasRoot(logicalType, LogicalTypeRoot.CHAR)) {
+			return Types.STRING;
+		}
+
+		else if (canConvertToTimestampTypeInfoLenient(dataType)) {
+			return Types.SQL_TIMESTAMP;
+		}
+
+		else if (canConvertToLegacyTypeInfo(dataType)) {
 			return convertToLegacyTypeInfo(dataType);
 		}
 
@@ -208,9 +240,17 @@ public final class LegacyTypeInfoDataTypeConverter {
 
 		throw new TableException(
 			String.format(
-				"Unsupported conversion from data type '%s' to type information. Only data types " +
+				"Unsupported conversion from data type '%s' (conversion class: %s) to type information. Only data types " +
 					"that originated from type information fully support a reverse conversion.",
-				dataType));
+				dataType,
+				dataType.getConversionClass().getName()));
+	}
+
+	private static boolean canConvertToTimestampTypeInfoLenient(DataType dataType) {
+		LogicalType logicalType = dataType.getLogicalType();
+		return hasRoot(logicalType, LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE) &&
+			dataType.getConversionClass() != LocalDateTime.class &&
+			LogicalTypeChecks.getPrecision(logicalType) <= 3;
 	}
 
 	private static DataType createLegacyType(LogicalTypeRoot typeRoot, TypeInformation<?> typeInfo) {

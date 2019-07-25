@@ -24,13 +24,13 @@ import org.apache.flink.core.memory.MemorySegmentProvider;
 import org.apache.flink.runtime.event.TaskEvent;
 import org.apache.flink.runtime.io.network.ConnectionID;
 import org.apache.flink.runtime.io.network.ConnectionManager;
+import org.apache.flink.runtime.io.network.PartitionRequestClient;
 import org.apache.flink.runtime.io.network.buffer.Buffer;
 import org.apache.flink.runtime.io.network.buffer.BufferListener;
 import org.apache.flink.runtime.io.network.buffer.BufferProvider;
 import org.apache.flink.runtime.io.network.buffer.BufferRecycler;
 import org.apache.flink.runtime.io.network.buffer.NetworkBuffer;
 import org.apache.flink.runtime.io.network.metrics.InputChannelMetrics;
-import org.apache.flink.runtime.io.network.netty.PartitionRequestClient;
 import org.apache.flink.runtime.io.network.partition.PartitionNotFoundException;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.util.ExceptionUtils;
@@ -133,14 +133,14 @@ public class RemoteInputChannel extends InputChannel implements BufferRecycler, 
 	 * after this input channel is created.
 	 */
 	void assignExclusiveSegments() throws IOException {
-		checkState(this.initialCredit == 0, "Bug in input channel setup logic: exclusive buffers have " +
+		checkState(initialCredit == 0, "Bug in input channel setup logic: exclusive buffers have " +
 			"already been set for this input channel.");
 
 		Collection<MemorySegment> segments = checkNotNull(memorySegmentProvider.requestMemorySegments());
 		checkArgument(!segments.isEmpty(), "The number of exclusive buffers per channel should be larger than 0.");
 
-		this.initialCredit = segments.size();
-		this.numRequiredBuffers = segments.size();
+		initialCredit = segments.size();
+		numRequiredBuffers = segments.size();
 
 		synchronized (bufferQueue) {
 			for (MemorySegment segment : segments) {
@@ -161,8 +161,12 @@ public class RemoteInputChannel extends InputChannel implements BufferRecycler, 
 	public void requestSubpartition(int subpartitionIndex) throws IOException, InterruptedException {
 		if (partitionRequestClient == null) {
 			// Create a client and request the partition
-			partitionRequestClient = connectionManager
-				.createPartitionRequestClient(connectionId);
+			try {
+				partitionRequestClient = connectionManager.createPartitionRequestClient(connectionId);
+			} catch (IOException e) {
+				// IOExceptions indicate that we could not open a connection to the remote TaskExecutor
+				throw new PartitionConnectionException(partitionId, e);
+			}
 
 			partitionRequestClient.requestSubpartition(partitionId, subpartitionIndex, this, 0);
 		}
@@ -171,7 +175,7 @@ public class RemoteInputChannel extends InputChannel implements BufferRecycler, 
 	/**
 	 * Retriggers a remote subpartition request.
 	 */
-	void retriggerSubpartitionRequest(int subpartitionIndex) throws IOException, InterruptedException {
+	void retriggerSubpartitionRequest(int subpartitionIndex) throws IOException {
 		checkState(partitionRequestClient != null, "Missing initial subpartition request.");
 
 		if (increaseBackoff()) {
@@ -197,7 +201,7 @@ public class RemoteInputChannel extends InputChannel implements BufferRecycler, 
 			moreAvailable = !receivedBuffers.isEmpty();
 		}
 
-		numBytesIn.inc(next.getSizeUnsafe());
+		numBytesIn.inc(next.getSize());
 		numBuffersIn.inc();
 		return Optional.of(new BufferAndAvailability(next, moreAvailable, getSenderBacklog()));
 	}
@@ -428,6 +432,14 @@ public class RemoteInputChannel extends InputChannel implements BufferRecycler, 
 
 	public int unsynchronizedGetNumberOfQueuedBuffers() {
 		return Math.max(0, receivedBuffers.size());
+	}
+
+	public int unsynchronizedGetExclusiveBuffersUsed() {
+		return Math.max(0, initialCredit - bufferQueue.exclusiveBuffers.size());
+	}
+
+	public int unsynchronizedGetFloatingBuffersAvailable() {
+		return Math.max(0, bufferQueue.floatingBuffers.size());
 	}
 
 	public InputChannelID getInputChannelId() {

@@ -19,9 +19,10 @@
 package org.apache.flink.table.api.batch
 
 import org.apache.flink.api.scala._
-import org.apache.flink.table.`type`.InternalTypes.{INT, LONG, STRING}
-import org.apache.flink.table.api.TableConfigOptions
-import org.apache.flink.table.util.TableTestBase
+import org.apache.flink.table.api.config.ExecutionConfigOptions
+import org.apache.flink.table.api.scala._
+import org.apache.flink.table.planner.utils.TableTestBase
+import org.apache.flink.table.types.logical.{BigIntType, IntType, VarCharType}
 
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,6 +35,10 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
   util.addTableSource[(Int, Long, String)]("MyTable", 'a, 'b, 'c)
   util.addDataStream[(Int, Long, String)]("MyTable1", 'a, 'b, 'c)
   util.addDataStream[(Int, Long, String)]("MyTable2", 'd, 'e, 'f)
+
+  val STRING = new VarCharType(VarCharType.MAX_LENGTH)
+  val LONG = new BigIntType()
+  val INT = new IntType()
 
   @Test
   def testExplainWithTableSourceScan(): Unit = {
@@ -58,8 +63,8 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
   @Test
   def testExplainWithJoin(): Unit = {
     // TODO support other join operators when them are supported
-    util.tableEnv.getConfig.getConf.setString(
-      TableConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+    util.tableEnv.getConfig.getConfiguration.setString(
+      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
     util.verifyExplain("SELECT a, b, c, e, f FROM MyTable1, MyTable2 WHERE a = d", extended)
   }
 
@@ -77,7 +82,7 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
   def testExplainWithSingleSink(): Unit = {
     val table = util.tableEnv.sqlQuery("SELECT * FROM MyTable1 WHERE a > 10")
     val sink = util.createCollectTableSink(Array("a", "b", "c"), Array(INT, LONG, STRING))
-    util.tableEnv.writeToSink(table, sink)
+    util.writeToSink(table, sink, "sink")
     util.verifyExplain(extended)
   }
 
@@ -88,11 +93,11 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
 
     val table1 = util.tableEnv.sqlQuery("SELECT * FROM TempTable WHERE cnt > 10")
     val sink1 = util.createCollectTableSink(Array("a", "cnt"), Array(INT, LONG))
-    util.tableEnv.writeToSink(table1, sink1, "sink1")
+    util.writeToSink(table1, sink1, "sink1")
 
     val table2 = util.tableEnv.sqlQuery("SELECT * FROM TempTable WHERE cnt < 10")
     val sink2 = util.createCollectTableSink(Array("a", "cnt"), Array(INT, LONG))
-    util.tableEnv.writeToSink(table2, sink2, "sink1")
+    util.writeToSink(table2, sink2, "sink2")
 
     util.verifyExplain(extended)
   }

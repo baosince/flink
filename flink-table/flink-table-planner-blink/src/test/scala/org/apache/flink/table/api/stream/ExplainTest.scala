@@ -19,13 +19,16 @@
 package org.apache.flink.table.api.stream
 
 import org.apache.flink.api.scala._
-import org.apache.flink.table.`type`.InternalTypes.{INT, LONG, STRING}
-import org.apache.flink.table.api.TableException
-import org.apache.flink.table.util.TableTestBase
+import org.apache.flink.table.api.config.ExecutionConfigOptions
+import org.apache.flink.table.api.scala._
+import org.apache.flink.table.planner.utils.TableTestBase
+import org.apache.flink.table.types.logical.{BigIntType, IntType, VarCharType}
 
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
+
+import java.sql.Timestamp
 
 @RunWith(classOf[Parameterized])
 class ExplainTest(extended: Boolean) extends TableTestBase {
@@ -34,6 +37,10 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
   util.addTableSource[(Int, Long, String)]("MyTable", 'a, 'b, 'c)
   util.addDataStream[(Int, Long, String)]("MyTable1", 'a, 'b, 'c)
   util.addDataStream[(Int, Long, String)]("MyTable2", 'd, 'e, 'f)
+
+  val STRING = new VarCharType(VarCharType.MAX_LENGTH)
+  val LONG = new BigIntType()
+  val INT = new IntType()
 
   @Test
   def testExplainTableSourceScan(): Unit = {
@@ -55,9 +62,7 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
     util.verifyExplain("SELECT COUNT(*) FROM MyTable1 GROUP BY a", extended)
   }
 
-  @Test(expected = classOf[TableException])
-  // TODO remove expected TableException after translateToPlanInternal method is implemented
-  //  in StreamExecJoin
+  @Test
   def testExplainWithJoin(): Unit = {
     util.verifyExplain("SELECT a, b, c, e, f FROM MyTable1, MyTable2 WHERE a = d", extended)
   }
@@ -76,7 +81,7 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
   def testExplainWithSingleSink(): Unit = {
     val table = util.tableEnv.sqlQuery("SELECT * FROM MyTable1 WHERE a > 10")
     val appendSink = util.createAppendTableSink(Array("a", "b", "c"), Array(INT, LONG, STRING))
-    util.tableEnv.writeToSink(table, appendSink)
+    util.writeToSink(table, appendSink, "appendSink")
     util.verifyExplain(extended)
   }
 
@@ -87,11 +92,54 @@ class ExplainTest(extended: Boolean) extends TableTestBase {
 
     val table1 = util.tableEnv.sqlQuery("SELECT * FROM TempTable WHERE cnt > 10")
     val upsertSink1 = util.createUpsertTableSink(Array(0), Array("a", "cnt"), Array(INT, LONG))
-    util.tableEnv.writeToSink(table1, upsertSink1, "sink1")
+    util.writeToSink(table1, upsertSink1, "upsertSink1")
 
     val table2 = util.tableEnv.sqlQuery("SELECT * FROM TempTable WHERE cnt < 10")
     val upsertSink2 = util.createUpsertTableSink(Array(0), Array("a", "cnt"), Array(INT, LONG))
-    util.tableEnv.writeToSink(table2, upsertSink2, "sink1")
+    util.writeToSink(table2, upsertSink2, "upsertSink2")
+
+    util.verifyExplain(extended)
+  }
+
+  @Test
+  def testMiniBatchIntervalInfer(): Unit = {
+    // Test emit latency propagate among RelNodeBlocks
+    util.addDataStream[(Int, String, Timestamp)]("T1", 'id1, 'text, 'rowtime.rowtime)
+    util.addDataStream[(Int, String, Int, String, Long, Timestamp)](
+      "T2", 'id2, 'cnt, 'name, 'goods, 'rowtime.rowtime)
+    util.addTableWithWatermark("T3", util.tableEnv.scan("T1"), "rowtime", 0)
+    util.addTableWithWatermark("T4", util.tableEnv.scan("T2"), "rowtime", 0)
+    util.tableEnv.getConfig.getConfiguration.setBoolean(
+      ExecutionConfigOptions.SQL_EXEC_MINIBATCH_ENABLED, true)
+    util.tableEnv.getConfig.getConfiguration.setString(
+      ExecutionConfigOptions.SQL_EXEC_MINIBATCH_ALLOW_LATENCY, "3 s")
+    val table = util.tableEnv.sqlQuery(
+      """
+        |SELECT id1, T3.rowtime AS ts, text
+        |  FROM T3, T4
+        |WHERE id1 = id2
+        |      AND T3.rowtime > T4.rowtime - INTERVAL '5' MINUTE
+        |      AND T3.rowtime < T4.rowtime + INTERVAL '3' MINUTE
+      """.stripMargin)
+    util.tableEnv.registerTable("TempTable", table)
+
+    val table1 = util.tableEnv.sqlQuery(
+      """
+        |SELECT id1, CONCAT_AGG('#', text)
+        |FROM TempTable
+        |GROUP BY id1, TUMBLE(ts, INTERVAL '8' SECOND)
+      """.stripMargin)
+    val appendSink1 = util.createAppendTableSink(Array("a", "b"), Array(INT, STRING))
+    util.writeToSink(table1, appendSink1, "appendSink1")
+
+    val table2 = util.tableEnv.sqlQuery(
+      """
+        |SELECT id1, CONCAT_AGG('*', text)
+        |FROM TempTable
+        |GROUP BY id1, HOP(ts, INTERVAL '12' SECOND, INTERVAL '6' SECOND)
+      """.stripMargin)
+    val appendSink2 = util.createAppendTableSink(Array("a", "b"), Array(INT, STRING))
+    util.writeToSink(table2, appendSink2, "appendSink2")
 
     util.verifyExplain(extended)
   }
