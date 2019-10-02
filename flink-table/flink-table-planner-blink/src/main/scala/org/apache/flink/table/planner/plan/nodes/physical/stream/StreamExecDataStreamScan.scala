@@ -77,9 +77,6 @@ class StreamExecDataStreamScan(
 
   override def deriveRowType(): RelDataType = outputRowType
 
-  def getSourceTransformation: Transformation[_] =
-    dataStreamTable.dataStream.getTransformation
-
   override def copy(traitSet: RelTraitSet, inputs: java.util.List[RelNode]): RelNode = {
     new StreamExecDataStreamScan(cluster, traitSet, getTable, getRowType)
   }
@@ -110,15 +107,12 @@ class StreamExecDataStreamScan(
     val config = planner.getTableConfig
     val inputDataStream: DataStream[Any] = dataStreamTable.dataStream
     val transform = inputDataStream.getTransformation
-    transform.setParallelism(getResource.getParallelism)
 
     val rowtimeExpr = getRowtimeExpression(planner.getRelBuilder)
 
     // when there is row time extraction expression, we need internal conversion
     // when the physical type of the input date stream is not BaseRow, we need internal conversion.
-    if (rowtimeExpr.isDefined || ScanUtil.needsConversion(
-      dataStreamTable.dataType,
-      dataStreamTable.dataStream.getType.getTypeClass)) {
+    if (rowtimeExpr.isDefined || ScanUtil.needsConversion(dataStreamTable.dataType)) {
 
       // extract time if the index is -1 or -2.
       val (extractElement, resetElement) =
@@ -129,7 +123,7 @@ class StreamExecDataStreamScan(
         }
       val ctx = CodeGeneratorContext(config).setOperatorBaseClass(
         classOf[AbstractProcessStreamOperator[BaseRow]])
-      val ret = ScanUtil.convertToInternalRow(
+      ScanUtil.convertToInternalRow(
         ctx,
         transform,
         dataStreamTable.fieldIndexes,
@@ -140,8 +134,6 @@ class StreamExecDataStreamScan(
         rowtimeExpr,
         beforeConvert = extractElement,
         afterConvert = resetElement)
-      ret.setParallelism(getResource.getParallelism)
-      ret
     } else {
       transform.asInstanceOf[Transformation[BaseRow]]
     }

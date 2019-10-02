@@ -27,7 +27,6 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.core.fs.FileSystemSafetyNet;
 import org.apache.flink.core.fs.Path;
-import org.apache.flink.core.fs.SafetyNetCloseableRegistry;
 import org.apache.flink.runtime.accumulators.AccumulatorRegistry;
 import org.apache.flink.runtime.blob.BlobCacheService;
 import org.apache.flink.runtime.blob.PermanentBlobKey;
@@ -93,8 +92,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -260,19 +257,13 @@ public class Task implements Runnable, TaskActions, PartitionProducerStateProvid
 	/** The observed exception, in case the task execution failed. */
 	private volatile Throwable failureCause;
 
-	/** Serial executor for asynchronous calls (checkpoints, etc), lazily initialized. */
-	private volatile ExecutorService asyncCallDispatcher;
-
 	/** Initialized from the Flink configuration. May also be set at the ExecutionConfig */
 	private long taskCancellationInterval;
 
 	/** Initialized from the Flink configuration. May also be set at the ExecutionConfig */
 	private long taskCancellationTimeout;
 
-	/**
-	 * This class loader should be set as the context class loader of the threads in
-	 * {@link #asyncCallDispatcher} because user code may dynamically load classes in all callbacks.
-	 */
+	/** This class loader should be set as the context class loader for threads that may dynamically load user code. */
 	private ClassLoader userCodeClassLoader;
 
 	/**
@@ -470,6 +461,18 @@ public class Task implements Runnable, TaskActions, PartitionProducerStateProvid
 		return invokable;
 	}
 
+	public StackTraceElement[] getStackTraceOfExecutingThread() {
+		final AbstractInvokable invokable = this.invokable;
+
+		if (invokable == null) {
+			return new StackTraceElement[0];
+		}
+
+		return invokable.getExecutingThread()
+			.orElse(executingThread)
+			.getStackTrace();
+	}
+
 	// ------------------------------------------------------------------------
 	//  Task Execution
 	// ------------------------------------------------------------------------
@@ -662,6 +665,11 @@ public class Task implements Runnable, TaskActions, PartitionProducerStateProvid
 				metrics,
 				this);
 
+			// Make sure the user code classloader is accessible thread-locally.
+			// We are setting the correct context class loader before instantiating the invokable
+			// so that it is available to the invokable during its entire lifetime.
+			executingThread.setContextClassLoader(userCodeClassLoader);
+
 			// now load and instantiate the task's invokable code
 			invokable = loadAndInstantiateInvokable(userCodeClassLoader, nameOfInvokableClass, env);
 
@@ -789,13 +797,6 @@ public class Task implements Runnable, TaskActions, PartitionProducerStateProvid
 				// clear the reference to the invokable. this helps guard against holding references
 				// to the invokable and its structures in cases where this Task object is still referenced
 				this.invokable = null;
-
-				// stop the async dispatcher.
-				// copy dispatcher reference to stack, against concurrent release
-				ExecutorService dispatcher = this.asyncCallDispatcher;
-				if (dispatcher != null && !dispatcher.isShutdown()) {
-					dispatcher.shutdownNow();
-				}
 
 				// free the network resources
 				releaseNetworkResources();
@@ -1121,45 +1122,26 @@ public class Task implements Runnable, TaskActions, PartitionProducerStateProvid
 		final CheckpointMetaData checkpointMetaData = new CheckpointMetaData(checkpointID, checkpointTimestamp);
 
 		if (executionState == ExecutionState.RUNNING && invokable != null) {
-
-			// build a local closure
-			final String taskName = taskNameWithSubtask;
-			final SafetyNetCloseableRegistry safetyNetCloseableRegistry =
-				FileSystemSafetyNet.getSafetyNetCloseableRegistryForThread();
-
-			Runnable runnable = new Runnable() {
-				@Override
-				public void run() {
-					// set safety net from the task's context for checkpointing thread
-					LOG.debug("Creating FileSystem stream leak safety net for {}", Thread.currentThread().getName());
-					FileSystemSafetyNet.setSafetyNetCloseableRegistryForThread(safetyNetCloseableRegistry);
-
-					try {
-						boolean success = invokable.triggerCheckpoint(checkpointMetaData, checkpointOptions, advanceToEndOfEventTime);
-						if (!success) {
-							checkpointResponder.declineCheckpoint(
-									getJobID(), getExecutionId(), checkpointID,
-									new CheckpointException("Task Name" + taskName, CheckpointFailureReason.CHECKPOINT_DECLINED_TASK_NOT_READY));
-						}
-					}
-					catch (Throwable t) {
-						if (getExecutionState() == ExecutionState.RUNNING) {
-							failExternally(new Exception(
-								"Error while triggering checkpoint " + checkpointID + " for " +
-									taskNameWithSubtask, t));
-						} else {
-							LOG.debug("Encountered error while triggering checkpoint {} for " +
-								"{} ({}) while being not in state running.", checkpointID,
-								taskNameWithSubtask, executionId, t);
-						}
-					} finally {
-						FileSystemSafetyNet.setSafetyNetCloseableRegistryForThread(null);
-					}
+			try {
+				invokable.triggerCheckpointAsync(checkpointMetaData, checkpointOptions, advanceToEndOfEventTime);
+			}
+			catch (RejectedExecutionException ex) {
+				// This may happen if the mailbox is closed. It means that the task is shutting down, so we just ignore it.
+				LOG.debug(
+					"Triggering checkpoint {} for {} ({}) was rejected by the mailbox",
+					checkpointID, taskNameWithSubtask, executionId);
+			}
+			catch (Throwable t) {
+				if (getExecutionState() == ExecutionState.RUNNING) {
+					failExternally(new Exception(
+						"Error while triggering checkpoint " + checkpointID + " for " +
+							taskNameWithSubtask, t));
+				} else {
+					LOG.debug("Encountered error while triggering checkpoint {} for " +
+						"{} ({}) while being not in state running.", checkpointID,
+						taskNameWithSubtask, executionId, t);
 				}
-			};
-			executeAsyncCallRunnable(
-					runnable,
-					String.format("Checkpoint Trigger for %s (%s).", taskNameWithSubtask, executionId));
+			}
 		}
 		else {
 			LOG.debug("Declining checkpoint request for non-running task {} ({}).", taskNameWithSubtask, executionId);
@@ -1175,81 +1157,26 @@ public class Task implements Runnable, TaskActions, PartitionProducerStateProvid
 		final AbstractInvokable invokable = this.invokable;
 
 		if (executionState == ExecutionState.RUNNING && invokable != null) {
-
-			Runnable runnable = new Runnable() {
-				@Override
-				public void run() {
-					try {
-						invokable.notifyCheckpointComplete(checkpointID);
-						taskStateManager.notifyCheckpointComplete(checkpointID);
-					} catch (Throwable t) {
-						if (getExecutionState() == ExecutionState.RUNNING) {
-							// fail task if checkpoint confirmation failed.
-							failExternally(new RuntimeException(
-								"Error while confirming checkpoint",
-								t));
-						}
-					}
+			try {
+				invokable.notifyCheckpointCompleteAsync(checkpointID);
+			}
+			catch (RejectedExecutionException ex) {
+				// This may happen if the mailbox is closed. It means that the task is shutting down, so we just ignore it.
+				LOG.debug(
+					"Notify checkpoint complete {} for {} ({}) was rejected by the mailbox",
+					checkpointID, taskNameWithSubtask, executionId);
+			}
+			catch (Throwable t) {
+				if (getExecutionState() == ExecutionState.RUNNING) {
+					// fail task if checkpoint confirmation failed.
+					failExternally(new RuntimeException(
+						"Error while confirming checkpoint",
+						t));
 				}
-			};
-			executeAsyncCallRunnable(
-					runnable,
-					"Checkpoint Confirmation for " + taskNameWithSubtask
-			);
+			}
 		}
 		else {
 			LOG.debug("Ignoring checkpoint commit notification for non-running task {}.", taskNameWithSubtask);
-		}
-	}
-
-	// ------------------------------------------------------------------------
-
-	/**
-	 * Utility method to dispatch an asynchronous call on the invokable.
-	 *  @param runnable The async call runnable.
-	 * @param callName The name of the call, for logging purposes.
-	 */
-	private void executeAsyncCallRunnable(Runnable runnable, String callName) {
-		// make sure the executor is initialized. lock against concurrent calls to this function
-		synchronized (this) {
-			if (executionState != ExecutionState.RUNNING) {
-				return;
-			}
-
-			// get ourselves a reference on the stack that cannot be concurrently modified
-			ExecutorService executor = this.asyncCallDispatcher;
-			if (executor == null) {
-				// first time use, initialize
-				checkState(userCodeClassLoader != null, "userCodeClassLoader must not be null");
-
-				executor = Executors.newSingleThreadExecutor(
-						new DispatcherThreadFactory(
-							TASK_THREADS_GROUP,
-							"Async calls on " + taskNameWithSubtask,
-							userCodeClassLoader));
-				this.asyncCallDispatcher = executor;
-
-				// double-check for execution state, and make sure we clean up after ourselves
-				// if we created the dispatcher while the task was concurrently canceled
-				if (executionState != ExecutionState.RUNNING) {
-					executor.shutdown();
-					asyncCallDispatcher = null;
-					return;
-				}
-			}
-
-			LOG.debug("Invoking async call {} on task {}", callName, taskNameWithSubtask);
-
-			try {
-				executor.submit(runnable);
-			}
-			catch (RejectedExecutionException e) {
-				// may be that we are concurrently finished or canceled.
-				// if not, report that something is fishy
-				if (executionState == ExecutionState.RUNNING) {
-					throw new RuntimeException("Async call was rejected, even though the task is running.", e);
-				}
-			}
 		}
 	}
 

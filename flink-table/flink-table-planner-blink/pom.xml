@@ -162,14 +162,14 @@ under the License.
 			<groupId>org.apache.calcite</groupId>
 			<artifactId>calcite-core</artifactId>
 			<!-- When updating the Calcite version, make sure to update the dependency exclusions -->
-			<version>1.20.0</version>
+			<version>${calcite.version}</version>
 			<exclusions>
 				<!--
-				"mvn dependency:tree" as of Calcite 1.20:
+				"mvn dependency:tree" as of Calcite 1.21:
 
-				[INFO] +- org.apache.calcite:calcite-core:jar:1.20.0:compile
+				[INFO] +- org.apache.calcite:calcite-core:jar:1.21.0:compile
 				[INFO] |  +- commons-codec:commons-codec:jar:1.10:compile
-				[INFO] |  +- org.apache.calcite:calcite-linq4j:jar:1.20.0:compile
+				[INFO] |  +- org.apache.calcite:calcite-linq4j:jar:1.21.0:compile
 				[INFO] |  +- org.apache.commons:commons-lang3:jar:3.3.2:compile
 				[INFO] |  +- com.fasterxml.jackson.core:jackson-core:jar:2.9.6:compile
 				[INFO] |  +- com.fasterxml.jackson.core:jackson-annotations:jar:2.9.6:compile
@@ -336,7 +336,7 @@ under the License.
 									<include>commons-codec:commons-codec</include>
 
 									<!-- flink-table-planner-blink dependencies -->
-									<include>org.apache.flink.sql.parser:*</include>
+									<include>org.apache.flink:flink-sql-parser</include>
 
 									<!-- flink-table-runtime-blink dependencies -->
 									<include>org.codehaus.janino:*</include>
@@ -397,6 +397,27 @@ under the License.
 						<goals>
 							<goal>test-jar</goal>
 						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>integration-tests</id>
+						<phase>integration-test</phase>
+						<goals>
+							<goal>test</goal>
+						</goals>
+						<configuration>
+							<includes>
+								<include>**/*ITCase.*</include>
+							</includes>
+							<!-- override reuseForks to true to reduce testing time -->
+							<reuseForks>true</reuseForks>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>

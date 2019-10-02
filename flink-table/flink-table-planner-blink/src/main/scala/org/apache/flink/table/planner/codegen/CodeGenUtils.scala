@@ -25,7 +25,7 @@ import org.apache.flink.table.dataformat.util.BinaryRowUtil.BYTE_ARRAY_BASE_OFFS
 import org.apache.flink.table.dataformat.{BinaryStringUtil, Decimal, _}
 import org.apache.flink.table.functions.UserDefinedFunction
 import org.apache.flink.table.runtime.dataview.StateDataViewStore
-import org.apache.flink.table.runtime.generated.{AggsHandleFunction, HashFunction, NamespaceAggsHandleFunction}
+import org.apache.flink.table.runtime.generated.{AggsHandleFunction, HashFunction, NamespaceAggsHandleFunction, TableAggsHandleFunction}
 import org.apache.flink.table.runtime.types.ClassLogicalTypeConverter
 import org.apache.flink.table.runtime.types.ClassLogicalTypeConverter.getInternalClassForType
 import org.apache.flink.table.runtime.types.LogicalTypeDataTypeConverter.fromDataTypeToLogicalType
@@ -46,8 +46,6 @@ object CodeGenUtils {
   // ------------------------------- DEFAULT TERMS ------------------------------------------
 
   val DEFAULT_TIMEZONE_TERM = "timeZone"
-
-  val DEFAULT_TIMEZONE_ID_TERM = "zoneId"
 
   val DEFAULT_INPUT1_TERM = "in1"
 
@@ -90,6 +88,8 @@ object CodeGenUtils {
   val SEGMENT: String = className[MemorySegment]
 
   val AGGS_HANDLER_FUNCTION: String = className[AggsHandleFunction]
+
+  val TABLE_AGGS_HANDLER_FUNCTION: String = className[TableAggsHandleFunction]
 
   val NAMESPACE_AGGS_HANDLER_FUNCTION: String = className[NamespaceAggsHandleFunction[_]]
 
@@ -201,10 +201,12 @@ object CodeGenUtils {
     * If it's internally compatible, don't need to DataStructure converter.
     * clazz != classOf[Row] => Row can only infer GenericType[Row].
     */
-  def isInternalClass(clazz: Class[_], t: DataType): Boolean =
+  def isInternalClass(t: DataType): Boolean = {
+    val clazz = t.getConversionClass
     clazz != classOf[Object] && clazz != classOf[Row] &&
-      (classOf[BaseRow].isAssignableFrom(clazz) ||
-          clazz == getInternalClassForType(fromDataTypeToLogicalType(t)))
+        (classOf[BaseRow].isAssignableFrom(clazz) ||
+            clazz == getInternalClassForType(fromDataTypeToLogicalType(t)))
+  }
 
   def hashCodeForType(
       ctx: CodeGeneratorContext, t: LogicalType, term: String): String = t.getTypeRoot match {
@@ -680,9 +682,8 @@ object CodeGenUtils {
   def genToInternalIfNeeded(
       ctx: CodeGeneratorContext,
       t: DataType,
-      clazz: Class[_],
       term: String): String = {
-    if (isInternalClass(clazz, t)) {
+    if (isInternalClass(t)) {
       s"(${boxedTypeTermForType(fromDataTypeToLogicalType(t))}) $term"
     } else {
       genToInternal(ctx, t, term)
@@ -705,9 +706,8 @@ object CodeGenUtils {
   def genToExternalIfNeeded(
       ctx: CodeGeneratorContext,
       t: DataType,
-      clazz: Class[_],
       term: String): String = {
-    if (isInternalClass(clazz, t)) {
+    if (isInternalClass(t)) {
       s"(${boxedTypeTermForType(fromDataTypeToLogicalType(t))}) $term"
     } else {
       genToExternal(ctx, t, term)

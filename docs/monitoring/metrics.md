@@ -725,6 +725,7 @@ metrics.reporter.promgateway.port: 9091
 metrics.reporter.promgateway.jobName: myJob
 metrics.reporter.promgateway.randomJobNameSuffix: true
 metrics.reporter.promgateway.deleteOnShutdown: false
+metrics.reporter.promgateway.groupingKey: k1=v1;k2=v2
 
 {% endhighlight %}
 
@@ -1031,7 +1032,7 @@ Thus, in order to infer the metric identifier:
       <th rowspan="8">Task</th>
       <td rowspan="4">buffers</td>
       <td>inputQueueLength</td>
-      <td>The number of queued input buffers.</td>
+      <td>The number of queued input buffers. (ignores LocalInputChannels which are using blocking subpartitions)</td>
       <td>Gauge</td>
     </tr>
     <tr>

@@ -39,7 +39,7 @@ class TableEnvironmentTest {
   def thrown: ExpectedException = expectedException
 
   val env = new StreamExecutionEnvironment(new LocalStreamEnvironment())
-  val tableEnv: StreamTableEnvironment = StreamTableEnvironment.create(env)
+  val tableEnv = StreamTableEnvironment.create(env, TableTestUtil.STREAM_SETTING)
 
   @Test
   def testScanNonExistTable(): Unit = {
@@ -59,8 +59,8 @@ class TableEnvironmentTest {
     assertEquals(expected, actual)
 
     // register on a conflict name
-    thrown.expect(classOf[org.apache.flink.table.api.TableException])
-    thrown.expectMessage("Could not register table")
+    thrown.expect(classOf[ValidationException])
+    thrown.expectMessage("Could not execute CreateTable in path")
     tableEnv.registerDataStream("MyTable", env.fromElements[(Int, Long)]())
   }
 

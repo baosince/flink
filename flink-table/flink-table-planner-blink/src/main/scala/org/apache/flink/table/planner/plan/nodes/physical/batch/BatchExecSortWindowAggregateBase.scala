@@ -105,8 +105,6 @@ abstract class BatchExecSortWindowAggregateBase(
     replaceInput(ordinalInParent, newInputNode.asInstanceOf[RelNode])
   }
 
-  def getOperatorName: String
-
   override protected def translateToPlanInternal(
       planner: BatchPlanner): Transformation[BaseRow] = {
     val input = getInputNodes.get(0).translateToPlan(planner)
@@ -119,7 +117,7 @@ abstract class BatchExecSortWindowAggregateBase(
       aggCallToAggFunction.map(_._1), aggInputRowType)
 
     val groupBufferLimitSize = planner.getTableConfig.getConfiguration.getInteger(
-      ExecutionConfigOptions.SQL_EXEC_WINDOW_AGG_BUFFER_SIZE_LIMIT)
+      ExecutionConfigOptions.TABLE_EXEC_WINDOW_AGG_BUFFER_SIZE_LIMIT)
 
     val (windowSize: Long, slideSize: Long) = WindowCodeGenerator.getWindowDef(window)
 
@@ -137,9 +135,9 @@ abstract class BatchExecSortWindowAggregateBase(
     val operator = new CodeGenOperatorFactory[BaseRow](generatedOperator)
     new OneInputTransformation(
       input,
-      getOperatorName,
+      getRelDetailedDescription,
       operator,
       BaseRowTypeInfo.of(outputType),
-      getResource.getParallelism)
+      input.getParallelism)
   }
 }

@@ -18,10 +18,10 @@
 
 package org.apache.flink.table.planner.operations;
 
-import org.apache.flink.sql.parser.SqlProperty;
 import org.apache.flink.sql.parser.ddl.SqlCreateTable;
 import org.apache.flink.sql.parser.ddl.SqlDropTable;
 import org.apache.flink.sql.parser.ddl.SqlTableColumn;
+import org.apache.flink.sql.parser.ddl.SqlTableOption;
 import org.apache.flink.sql.parser.dml.RichSqlInsert;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.api.TableSchema;
@@ -33,7 +33,6 @@ import org.apache.flink.table.operations.ddl.CreateTableOperation;
 import org.apache.flink.table.operations.ddl.DropTableOperation;
 import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
-import org.apache.flink.table.planner.calcite.FlinkTypeSystem;
 import org.apache.flink.table.runtime.types.LogicalTypeDataTypeConverter;
 
 import org.apache.calcite.rel.RelRoot;
@@ -112,12 +111,11 @@ public class SqlToOperationConverter {
 		Map<String, String> properties = new HashMap<>();
 		if (propertyList != null) {
 			propertyList.getList().forEach(p ->
-				properties.put(((SqlProperty) p).getKeyString().toLowerCase(),
-					((SqlProperty) p).getValueString()));
+				properties.put(((SqlTableOption) p).getKeyString().toLowerCase(),
+					((SqlTableOption) p).getValueString()));
 		}
 
-		TableSchema tableSchema = createTableSchema(sqlCreateTable,
-			new FlinkTypeFactory(new FlinkTypeSystem())); // need to make type factory singleton ?
+		TableSchema tableSchema = createTableSchema(sqlCreateTable);
 		String tableComment = "";
 		if (sqlCreateTable.getComment() != null) {
 			tableComment = sqlCreateTable.getComment().getNlsString().getValue();
@@ -153,7 +151,8 @@ public class SqlToOperationConverter {
 			targetTablePath,
 			(PlannerQueryOperation) SqlToOperationConverter.convert(flinkPlanner,
 				insert.getSource()),
-			insert.getStaticPartitionKVs());
+			insert.getStaticPartitionKVs(),
+			insert.isOverwrite());
 	}
 
 	/** Fallback method for sql query. */
@@ -172,18 +171,16 @@ public class SqlToOperationConverter {
 	 *     b varchar,
 	 *     c as to_timestamp(b))
 	 *   with (
-	 *     connector = 'csv',
-	 *     k1 = 'v1')
+	 *     'connector' = 'csv',
+	 *     'k1' = 'v1')
 	 * </pre></blockquote>
 	 *
 	 * <p>The returned table schema contains columns (a:int, b:varchar, c:timestamp).
 	 *
 	 * @param sqlCreateTable sql create table node.
-	 * @param factory        FlinkTypeFactory instance.
 	 * @return TableSchema
 	 */
-	private TableSchema createTableSchema(SqlCreateTable sqlCreateTable,
-			FlinkTypeFactory factory) {
+	private TableSchema createTableSchema(SqlCreateTable sqlCreateTable) {
 		// setup table columns
 		SqlNodeList columnList = sqlCreateTable.getColumnList();
 		TableSchema physicalSchema = null;
@@ -193,8 +190,10 @@ public class SqlToOperationConverter {
 			.filter(n -> n instanceof SqlTableColumn).collect(Collectors.toList());
 		for (SqlNode node : physicalColumns) {
 			SqlTableColumn column = (SqlTableColumn) node;
-			final RelDataType relType = column.getType().deriveType(factory,
-				column.getType().getNullable());
+			final RelDataType relType = column.getType()
+				.deriveType(
+					flinkPlanner.getOrCreateSqlValidator(),
+					column.getType().getNullable());
 			builder.field(column.getName().getSimple(),
 				LogicalTypeDataTypeConverter.fromLogicalTypeToDataType(
 					FlinkTypeFactory.toLogicalType(relType)));

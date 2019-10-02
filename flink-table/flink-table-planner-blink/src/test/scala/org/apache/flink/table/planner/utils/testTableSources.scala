@@ -18,20 +18,28 @@
 
 package org.apache.flink.table.planner.utils
 
+import org.apache.flink.api.common.ExecutionConfig
+import org.apache.flink.api.common.io.InputFormat
 import org.apache.flink.api.common.typeinfo.{BasicTypeInfo, TypeInformation}
+import org.apache.flink.api.common.typeutils.TypeSerializer
+import org.apache.flink.api.java.io.CollectionInputFormat
 import org.apache.flink.api.java.typeutils.RowTypeInfo
+import org.apache.flink.core.io.InputSplit
 import org.apache.flink.streaming.api.datastream.DataStream
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 import org.apache.flink.table.api.{TableSchema, Types}
 import org.apache.flink.table.expressions.utils.ApiExpressionUtils.unresolvedCall
-import org.apache.flink.table.expressions.{Expression, FieldReferenceExpression, UnresolvedCallExpression, ValueLiteralExpression}
+import org.apache.flink.table.expressions.{CallExpression, Expression, FieldReferenceExpression, ValueLiteralExpression}
 import org.apache.flink.table.functions.BuiltInFunctionDefinitions
 import org.apache.flink.table.functions.BuiltInFunctionDefinitions.AND
 import org.apache.flink.table.planner.runtime.utils.BatchTestBase.row
 import org.apache.flink.table.planner.runtime.utils.TimeTestUtil.EventTimeSourceFunction
+import org.apache.flink.table.runtime.types.TypeInfoDataTypeConverter.fromDataTypeToTypeInfo
 import org.apache.flink.table.sources._
 import org.apache.flink.table.sources.tsextractors.ExistingField
 import org.apache.flink.table.sources.wmstrategies.{AscendingTimestamps, PreserveWatermarks}
+import org.apache.flink.table.types.DataType
+import org.apache.flink.table.types.utils.TypeConversions.fromLegacyInfoToDataType
 import org.apache.flink.types.Row
 
 import java.io.{File, FileOutputStream, OutputStreamWriter}
@@ -390,12 +398,12 @@ class TestFilterableTableSource(
 
   private def shouldPushDown(expr: Expression): Boolean = {
     expr match {
-      case expr: UnresolvedCallExpression if expr.getChildren.size() == 2 => shouldPushDown(expr)
+      case expr: CallExpression if expr.getChildren.size() == 2 => shouldPushDown(expr)
       case _ => false
     }
   }
 
-  private def shouldPushDown(binExpr: UnresolvedCallExpression): Boolean = {
+  private def shouldPushDown(binExpr: CallExpression): Boolean = {
     val children = binExpr.getChildren
     require(children.size() == 2)
     (children.head, children.last) match {
@@ -411,13 +419,13 @@ class TestFilterableTableSource(
 
   private def shouldKeep(row: Row): Boolean = {
     filterPredicates.isEmpty || filterPredicates.forall {
-      case expr: UnresolvedCallExpression if expr.getChildren.size() == 2 =>
+      case expr: CallExpression if expr.getChildren.size() == 2 =>
         binaryFilterApplies(expr, row)
       case expr => throw new RuntimeException(expr + " not supported!")
     }
   }
 
-  private def binaryFilterApplies(binExpr: UnresolvedCallExpression, row: Row): Boolean = {
+  private def binaryFilterApplies(binExpr: CallExpression, row: Row): Boolean = {
     val children = binExpr.getChildren
     require(children.size() == 2)
     val (lhsValue, rhsValue) = extractValues(binExpr, row)
@@ -439,7 +447,7 @@ class TestFilterableTableSource(
   }
 
   private def extractValues(
-      binExpr: UnresolvedCallExpression,
+      binExpr: CallExpression,
       row: Row): (Comparable[Any], Comparable[Any]) = {
     val children = binExpr.getChildren
     require(children.size() == 2)
@@ -596,4 +604,54 @@ class TestPartitionableTableSource(
   override def getReturnType: TypeInformation[Row] = returnType
 
   override def getTableSchema: TableSchema = new TableSchema(fieldNames, fieldTypes)
+}
+
+class TestInputFormatTableSource[T](
+    tableSchema: TableSchema,
+    returnType: TypeInformation[T],
+    values: Seq[T]) extends InputFormatTableSource[T] {
+
+  override def getInputFormat: InputFormat[T, _ <: InputSplit] = {
+    new CollectionInputFormat[T](values.asJava, returnType.createSerializer(new ExecutionConfig))
+  }
+
+  override def getReturnType: TypeInformation[T] =
+    throw new RuntimeException("Should not invoke this deprecated method.")
+
+  override def getProducedDataType: DataType = fromLegacyInfoToDataType(returnType)
+
+  override def getTableSchema: TableSchema = tableSchema
+}
+
+class TestDataTypeTableSource(
+    tableSchema: TableSchema,
+    values: Seq[Row]) extends InputFormatTableSource[Row] {
+
+  override def getInputFormat: InputFormat[Row, _ <: InputSplit] = {
+    new CollectionInputFormat[Row](
+      values.asJava,
+      fromDataTypeToTypeInfo(getProducedDataType)
+          .createSerializer(new ExecutionConfig)
+          .asInstanceOf[TypeSerializer[Row]])
+  }
+
+  override def getReturnType: TypeInformation[Row] =
+    throw new RuntimeException("Should not invoke this deprecated method.")
+
+  override def getProducedDataType: DataType = tableSchema.toRowDataType
+
+  override def getTableSchema: TableSchema = tableSchema
+}
+
+class TestStreamTableSource(
+    tableSchema: TableSchema,
+    values: Seq[Row]) extends StreamTableSource[Row] {
+
+  override def getDataStream(execEnv: StreamExecutionEnvironment): DataStream[Row] = {
+    execEnv.fromCollection(values, tableSchema.toRowType)
+  }
+
+  override def getReturnType: TypeInformation[Row] = tableSchema.toRowType
+
+  override def getTableSchema: TableSchema = tableSchema
 }

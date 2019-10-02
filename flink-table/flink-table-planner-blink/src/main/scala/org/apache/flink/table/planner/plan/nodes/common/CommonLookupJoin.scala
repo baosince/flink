@@ -22,8 +22,8 @@ import org.apache.flink.api.dag.Transformation
 import org.apache.flink.api.java.typeutils.{GenericTypeInfo, RowTypeInfo, TypeExtractor}
 import org.apache.flink.streaming.api.datastream.AsyncDataStream.OutputMode
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
-import org.apache.flink.streaming.api.operators.ProcessOperator
-import org.apache.flink.streaming.api.operators.async.AsyncWaitOperator
+import org.apache.flink.streaming.api.operators.async.AsyncWaitOperatorFactory
+import org.apache.flink.streaming.api.operators.{ProcessOperator, SimpleOperatorFactory}
 import org.apache.flink.streaming.api.transformations.OneInputTransformation
 import org.apache.flink.table.api.config.ExecutionConfigOptions
 import org.apache.flink.table.api.{TableConfig, TableException, TableSchema}
@@ -36,6 +36,7 @@ import org.apache.flink.table.planner.functions.utils.UserDefinedFunctionUtils.{
 import org.apache.flink.table.planner.plan.nodes.FlinkRelNode
 import org.apache.flink.table.planner.plan.utils.LookupJoinUtil._
 import org.apache.flink.table.planner.plan.utils.{JoinTypeUtil, RelExplainUtil}
+import org.apache.flink.table.planner.plan.utils.RelExplainUtil.preferExpressionFormat
 import org.apache.flink.table.planner.utils.TableConfigUtils.getMillisecondFromConfigDuration
 import org.apache.flink.table.runtime.operators.join.lookup.{AsyncLookupJoinRunner, AsyncLookupJoinWithCalcRunner, LookupJoinRunner, LookupJoinWithCalcRunner}
 import org.apache.flink.table.runtime.types.ClassLogicalTypeConverter
@@ -126,7 +127,8 @@ abstract class CommonLookupJoin(
     val resultFieldNames = getRowType.getFieldNames.asScala.toArray
     val lookupableSource = tableSource.asInstanceOf[LookupableTableSource[_]]
     val whereString = calcOnTemporalTable match {
-      case Some(calc) => RelExplainUtil.conditionToString(calc, getExpressionString)
+      case Some(calc) => RelExplainUtil.conditionToString(
+        calc, getExpressionString, preferExpressionFormat(pw))
       case None => "N/A"
     }
 
@@ -186,11 +188,11 @@ abstract class CommonLookupJoin(
     val lookupableTableSource = tableSource.asInstanceOf[LookupableTableSource[_]]
     val leftOuterJoin = joinType == JoinRelType.LEFT
 
-    val operator = if (lookupableTableSource.isAsyncEnabled) {
+    val operatorFactory = if (lookupableTableSource.isAsyncEnabled) {
       val asyncBufferCapacity= config.getConfiguration
-        .getInteger(ExecutionConfigOptions.SQL_EXEC_LOOKUP_ASYNC_BUFFER_CAPACITY)
+        .getInteger(ExecutionConfigOptions.TABLE_EXEC_ASYNC_LOOKUP_BUFFER_CAPACITY)
       val asyncTimeout = getMillisecondFromConfigDuration(config,
-        ExecutionConfigOptions.SQL_EXEC_LOOKUP_ASYNC_TIMEOUT)
+        ExecutionConfigOptions.TABLE_EXEC_ASYNC_LOOKUP_TIMEOUT)
 
       val asyncLookupFunction = lookupableTableSource
         .getAsyncLookupFunction(lookupFieldNamesInOrder)
@@ -267,7 +269,7 @@ abstract class CommonLookupJoin(
 
       // force ORDERED output mode currently, optimize it to UNORDERED
       // when the downstream do not need orderness
-      new AsyncWaitOperator(asyncFunc, asyncTimeout, asyncBufferCapacity, OutputMode.ORDERED)
+      new AsyncWaitOperatorFactory(asyncFunc, asyncTimeout, asyncBufferCapacity, OutputMode.ORDERED)
     } else {
       // sync join
       val lookupFunction = lookupableTableSource.getLookupFunction(lookupFieldNamesInOrder)
@@ -338,13 +340,13 @@ abstract class CommonLookupJoin(
           leftOuterJoin,
           rightRowType.getFieldCount)
       }
-      new ProcessOperator(processFunc)
+      SimpleOperatorFactory.of(new ProcessOperator(processFunc))
     }
 
     new OneInputTransformation(
       inputTransformation,
-      "LookupJoin",
-      operator,
+      getRelDetailedDescription,
+      operatorFactory,
       BaseRowTypeInfo.of(resultRowType),
       inputTransformation.getParallelism)
   }
@@ -560,7 +562,7 @@ abstract class CommonLookupJoin(
       joinType: JoinRelType): Unit = {
 
     // check join on all fields of PRIMARY KEY or (UNIQUE) INDEX
-    if (allLookupKeys.isEmpty || allLookupKeys.isEmpty) {
+    if (allLookupKeys.isEmpty) {
       throw new TableException(
         "Temporal table join requires an equality condition on fields of " +
           s"table [${tableSource.explainSource()}].")

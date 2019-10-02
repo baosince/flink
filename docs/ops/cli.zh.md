@@ -90,7 +90,7 @@ available.
 
 -   Run example program using a [per-job YARN cluster]({{site.baseurl}}/zh/ops/deployment/yarn_setup.html#run-a-single-flink-job-on-hadoop-yarn) with 2 TaskManagers:
 
-        ./bin/flink run -m yarn-cluster -yn 2 \
+        ./bin/flink run -m yarn-cluster  \
                                ./examples/batch/WordCount.jar \
                                --input hdfs:///user/hamlet.txt --output hdfs:///user/wordcount_out
                                
@@ -100,40 +100,38 @@ available.
 
 -   提交一个Python Table的作业:
 
-        ./bin/flink run -py WordCount.py -j <path/to/flink-table.jar>
+        ./bin/flink run -py WordCount.py
 
 -   提交一个有多个依赖的Python Table的作业:
 
-        ./bin/flink run -py examples/python/table/batch/word_count.py -j <path/to/flink-table.jar> \
+        ./bin/flink run -py examples/python/table/batch/word_count.py \
                                 -pyfs file:///user.txt,hdfs:///$namenode_address/username.txt
 
 -   提交一个有多个依赖的Python Table的作业，Python作业的主入口通过pym选项指定:
 
-        ./bin/flink run -pym batch.word_count -pyfs examples/python/table/batch -j <path/to/flink-table.jar>
+        ./bin/flink run -pym batch.word_count -pyfs examples/python/table/batch
 
 -   提交一个指定并发度为16的Python Table的作业:
 
-        ./bin/flink run -p 16 -py examples/python/table/batch/word_count.py -j <path/to/flink-table.jar>
+        ./bin/flink run -p 16 -py examples/python/table/batch/word_count.py
 
 -   提交一个关闭flink日志输出的Python Table的作业:
 
-        ./bin/flink run -q -py examples/python/table/batch/word_count.py -j <path/to/flink-table.jar>
+        ./bin/flink run -q -py examples/python/table/batch/word_count.py
 
 -   提交一个运行在detached模式下的Python Table的作业:
 
-        ./bin/flink run -d -py examples/python/table/batch/word_count.py -j <path/to/flink-table.jar>
+        ./bin/flink run -d -py examples/python/table/batch/word_count.py
 
 -   提交一个运行在指定JobManager上的Python Table的作业:
 
         ./bin/flink run -m myJMHost:8081 \
-                            -py examples/python/table/batch/word_count.py \
-                            -j <path/to/flink-table.jar>
+                            -py examples/python/table/batch/word_count.py
 
 -   提交一个运行在有两个TaskManager的[per-job YARN cluster]({{site.baseurl}}/ops/deployment/yarn_setup.html#run-a-single-flink-job-on-hadoop-yarn)的Python Table的作业:
 
-        ./bin/flink run -m yarn-cluster -yn 2 \
-                                 -py examples/python/table/batch/word_count.py \
-                                 -j <path/to/flink-table.jar>
+        ./bin/flink run -m yarn-cluster \
+                                 -py examples/python/table/batch/word_count.py
                                  
 </div>
 
@@ -351,8 +349,6 @@ Action "run" compiles and runs a program.
      -yj,--yarnjar <arg>                  Path to Flink jar file
      -yjm,--yarnjobManagerMemory <arg>    Memory for JobManager Container
                                           with optional unit (default: MB)
-     -yn,--yarncontainer <arg>            Number of YARN container to allocate
-                                          (=Number of Task Managers)
      -ynm,--yarnname <arg>                Set a custom name for the application
                                           on YARN
      -yq,--yarnquery                      Display available YARN resources

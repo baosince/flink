@@ -210,8 +210,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final String topicName = writeSequence("testCommitOffsetsToKafkaTopic", recordsInEachPartition, parallelism, 1);
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
-		env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
+				env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
 		env.setParallelism(parallelism);
 		env.enableCheckpointing(200);
 
@@ -293,8 +292,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final String topicName = writeSequence("testAutoOffsetRetrievalAndCommitToKafkaTopic", recordsInEachPartition, parallelism, 1);
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
-		env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
+				env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
 		env.setParallelism(parallelism);
 		env.enableCheckpointing(200);
 
@@ -371,8 +369,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final String topicName = writeSequence("testStartFromEarliestOffsetsTopic", recordsInEachPartition, parallelism, 1);
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
-		env.setParallelism(parallelism);
+				env.setParallelism(parallelism);
 
 		Properties readProps = new Properties();
 		readProps.putAll(standardProps);
@@ -429,8 +426,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 
 		// setup and run the latest-consuming job
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
-		env.setParallelism(parallelism);
+				env.setParallelism(parallelism);
 
 		final Properties readProps = new Properties();
 		readProps.putAll(standardProps);
@@ -547,8 +543,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final String topicName = writeSequence("testStartFromGroupOffsetsTopic", recordsInEachPartition, parallelism, 1);
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
-		env.setParallelism(parallelism);
+				env.setParallelism(parallelism);
 
 		Properties readProps = new Properties();
 		readProps.putAll(standardProps);
@@ -606,8 +601,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final String topicName = writeSequence("testStartFromSpecificOffsetsTopic", recordsInEachPartition, parallelism, 1);
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
-		env.setParallelism(parallelism);
+				env.setParallelism(parallelism);
 
 		Properties readProps = new Properties();
 		readProps.putAll(standardProps);
@@ -665,8 +659,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		writeAppendSequence(topic, initialRecordsInEachPartition, appendRecordsInEachPartition, parallelism);
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
-		env.setParallelism(parallelism);
+				env.setParallelism(parallelism);
 
 		Properties readProps = new Properties();
 		readProps.putAll(standardProps);
@@ -718,7 +711,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		env.setParallelism(parallelism);
 		env.enableCheckpointing(500);
 		env.setRestartStrategy(RestartStrategies.noRestart()); // fail immediately
-		env.getConfig().disableSysoutLogging();
 
 		TypeInformation<Tuple2<Long, String>> longStringType =
 				TypeInformation.of(new TypeHint<Tuple2<Long, String>>(){});
@@ -857,7 +849,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		env.enableCheckpointing(500);
 		env.setParallelism(parallelism);
 		env.setRestartStrategy(RestartStrategies.fixedDelayRestart(1, 0));
-		env.getConfig().disableSysoutLogging();
 
 		Properties props = new Properties();
 		props.putAll(standardProps);
@@ -909,7 +900,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		env.enableCheckpointing(500);
 		env.setParallelism(parallelism);
 		env.setRestartStrategy(RestartStrategies.fixedDelayRestart(1, 0));
-		env.getConfig().disableSysoutLogging();
 
 		Properties props = new Properties();
 		props.putAll(standardProps);
@@ -961,8 +951,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		env.setParallelism(parallelism);
 		// set the number of restarts to one. The failing mapper will fail once, then it's only success exceptions.
 		env.setRestartStrategy(RestartStrategies.fixedDelayRestart(1, 0));
-		env.getConfig().disableSysoutLogging();
-		env.setBufferTimeout(0);
+				env.setBufferTimeout(0);
 
 		Properties props = new Properties();
 		props.putAll(standardProps);
@@ -1002,7 +991,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(parallelism);
 		env.enableCheckpointing(100);
-		env.getConfig().disableSysoutLogging();
 
 		Properties props = new Properties();
 		props.putAll(standardProps);
@@ -1078,7 +1066,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(parallelism);
 		env.enableCheckpointing(100);
-		env.getConfig().disableSysoutLogging();
 
 		Properties props = new Properties();
 		props.putAll(standardProps);
@@ -1135,7 +1122,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		final int numElements = 20;
 
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
 
 		// create topics with content
 		final List<String> topics = new ArrayList<>();
@@ -1176,7 +1162,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 			Tuple2WithTopicSchema schema = new Tuple2WithTopicSchema(env.getConfig());
 			kafkaServer.produceIntoKafka(stream, "dummy", schema, props, null);
 		} else {
-			TestDeSerializer schema = new TestDeSerializer(env.getConfig());
+			TestDeserializer schema = new TestDeserializer(env.getConfig());
 			kafkaServer.produceIntoKafka(stream, "dummy", schema, props);
 		}
 
@@ -1184,13 +1170,12 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 
 		// run second job consuming from multiple topics
 		env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
 
 		if (useLegacySchema) {
 			Tuple2WithTopicSchema schema = new Tuple2WithTopicSchema(env.getConfig());
 			stream = env.addSource(kafkaServer.getConsumer(topics, schema, props));
 		} else {
-			TestDeSerializer schema = new TestDeSerializer(env.getConfig());
+			TestDeserializer schema = new TestDeserializer(env.getConfig());
 			stream = env.addSource(kafkaServer.getConsumer(topics, schema, props));
 		}
 
@@ -1251,8 +1236,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setRestartStrategy(RestartStrategies.noRestart());
-		env.getConfig().disableSysoutLogging();
-		env.enableCheckpointing(100);
+				env.enableCheckpointing(100);
 		env.setParallelism(parallelism);
 
 		// add consuming topology:
@@ -1365,7 +1349,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		env.setParallelism(parallelism);
 		env.enableCheckpointing(500);
 		env.setRestartStrategy(RestartStrategies.noRestart());
-		env.getConfig().disableSysoutLogging();
 
 		Properties props = new Properties();
 		props.putAll(standardProps);
@@ -1395,7 +1378,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(1);
 		env.setRestartStrategy(RestartStrategies.noRestart());
-		env.getConfig().disableSysoutLogging();
 
 		DataStream<Tuple2<Long, PojoValue>> kvStream = env.addSource(new SourceFunction<Tuple2<Long, PojoValue>>() {
 			@Override
@@ -1428,7 +1410,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(1);
 		env.setRestartStrategy(RestartStrategies.noRestart());
-		env.getConfig().disableSysoutLogging();
 
 		KafkaDeserializationSchema<Tuple2<Long, PojoValue>> readSchema = new TypeInformationKeyValueSerializationSchema<>(Long.class, PojoValue.class, env.getConfig());
 
@@ -1481,7 +1462,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(1);
 		env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-		env.getConfig().disableSysoutLogging();
 
 		DataStream<Tuple2<byte[], PojoValue>> kvStream = env.addSource(new SourceFunction<Tuple2<byte[], PojoValue>>() {
 			@Override
@@ -1513,7 +1493,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(1);
 		env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-		env.getConfig().disableSysoutLogging();
 
 		Properties props = new Properties();
 		props.putAll(standardProps);
@@ -1896,8 +1875,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 
 			StreamExecutionEnvironment writeEnv = StreamExecutionEnvironment.getExecutionEnvironment();
 			writeEnv.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-			writeEnv.getConfig().disableSysoutLogging();
-
 			DataStream<Tuple2<Integer, Integer>> stream = writeEnv.addSource(new RichParallelSourceFunction<Tuple2<Integer, Integer>>() {
 
 				private boolean running = true;
@@ -1984,8 +1961,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 
 		StreamExecutionEnvironment writeEnv = StreamExecutionEnvironment.getExecutionEnvironment();
 		writeEnv.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-		writeEnv.getConfig().disableSysoutLogging();
-
 		DataStream<Tuple2<Integer, Integer>> stream = writeEnv.addSource(new RichParallelSourceFunction<Tuple2<Integer, Integer>>() {
 
 			private boolean running = true;
@@ -2043,7 +2018,6 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 
 		final StreamExecutionEnvironment readEnv = StreamExecutionEnvironment.getExecutionEnvironment();
 		readEnv.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-		readEnv.getConfig().disableSysoutLogging();
 		readEnv.setParallelism(parallelism);
 
 		Properties readProps = (Properties) standardProps.clone();
@@ -2207,12 +2181,12 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		}
 	}
 
-	private abstract static class TestDeserializer implements
+	private abstract static class AbstractTestDeserializer implements
 			KafkaDeserializationSchema<Tuple3<Integer, Integer, String>> {
 
 		protected final TypeSerializer<Tuple2<Integer, Integer>> ts;
 
-		public TestDeserializer(ExecutionConfig ec) {
+		public AbstractTestDeserializer(ExecutionConfig ec) {
 			ts = TypeInformation.of(new TypeHint<Tuple2<Integer, Integer>>(){}).createSerializer(ec);
 		}
 
@@ -2234,7 +2208,7 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		}
 	}
 
-	private static class Tuple2WithTopicSchema extends TestDeserializer
+	private static class Tuple2WithTopicSchema extends AbstractTestDeserializer
 			implements KeyedSerializationSchema<Tuple3<Integer, Integer, String>> {
 
 		public Tuple2WithTopicSchema(ExecutionConfig ec) {
@@ -2264,10 +2238,10 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 		}
 	}
 
-	private static class TestDeSerializer extends TestDeserializer
+	private static class TestDeserializer extends AbstractTestDeserializer
 			implements KafkaSerializationSchema<Tuple3<Integer, Integer, String>> {
 
-		public TestDeSerializer(ExecutionConfig ec) {
+		public TestDeserializer(ExecutionConfig ec) {
 			super(ec);
 		}
 

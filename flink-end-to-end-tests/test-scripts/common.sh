@@ -78,29 +78,26 @@ function print_mem_use {
     fi
 }
 
+BACKUP_FLINK_DIRS="conf lib plugins"
+
 function backup_flink_dir() {
     mkdir -p "${TEST_DATA_DIR}/tmp/backup"
     # Note: not copying all directory tree, as it may take some time on some file systems.
-    cp -r "${FLINK_DIR}/conf" "${TEST_DATA_DIR}/tmp/backup/"
-    cp -r "${FLINK_DIR}/lib" "${TEST_DATA_DIR}/tmp/backup/"
+    for dirname in ${BACKUP_FLINK_DIRS}; do
+        cp -r "${FLINK_DIR}/${dirname}" "${TEST_DATA_DIR}/tmp/backup/"
+    done
 }
 
 function revert_flink_dir() {
 
-    if [ -d "${TEST_DATA_DIR}/tmp/backup/conf" ]; then
-        rm -rf "${FLINK_DIR}/conf"
-        mv "${TEST_DATA_DIR}/tmp/backup/conf" "${FLINK_DIR}/"
-    fi
-
-    if [ -d "${TEST_DATA_DIR}/tmp/backup/lib" ]; then
-        rm -rf "${FLINK_DIR}/lib"
-        mv "${TEST_DATA_DIR}/tmp/backup/lib" "${FLINK_DIR}/"
-    fi
+    for dirname in ${BACKUP_FLINK_DIRS}; do
+        if [ -d "${TEST_DATA_DIR}/tmp/backup/${dirname}" ]; then
+            rm -rf "${FLINK_DIR}/${dirname}"
+            mv "${TEST_DATA_DIR}/tmp/backup/${dirname}" "${FLINK_DIR}/"
+        fi
+    done
 
     rm -r "${TEST_DATA_DIR}/tmp/backup"
-
-    # By default, the plugins dir doesn't exist. Some tests may have created it.
-    rm -r "${FLINK_DIR}/plugins"
 
     REST_PROTOCOL="http"
     CURL_SSL_ARGS=""
@@ -332,6 +329,7 @@ function check_logs_for_errors {
       | grep -v "org.apache.flink.fs.shaded.hadoop3.org.apache.commons.beanutils.FluentPropertyBeanIntrospector  - Error when creating PropertyDescriptor for public final void org.apache.flink.fs.shaded.hadoop3.org.apache.commons.configuration2.AbstractConfiguration.setProperty(java.lang.String,java.lang.Object)! Ignoring this property." \
       | grep -v "Error while loading kafka-version.properties :null" \
       | grep -v "Failed Elasticsearch item request" \
+      | grep -v "[Terror] modules" \
       | grep -ic "error" || true)
   if [[ ${error_count} -gt 0 ]]; then
     echo "Found error in log files:"
@@ -471,6 +469,10 @@ function wait_job_terminal_state {
   done
 }
 
+function stop_with_savepoint {
+  "$FLINK_DIR"/bin/flink stop -p $2 $1
+}
+
 function take_savepoint {
   "$FLINK_DIR"/bin/flink savepoint $1 $2
 }
@@ -549,9 +551,9 @@ function kill_all {
 }
 
 function kill_random_taskmanager {
-  KILL_TM=$(jps | grep "TaskManager" | sort -R | head -n 1 | awk '{print $1}')
-  kill -9 "$KILL_TM"
-  echo "TaskManager $KILL_TM killed."
+  local pid=`jps | grep -E "TaskManagerRunner|TaskManager" | sort -R | head -n 1 | cut -d " " -f 1 || true`
+  kill -9 "$pid"
+  echo "TaskManager $pid killed."
 }
 
 function setup_flink_slf4j_metric_reporter() {
@@ -743,3 +745,16 @@ function retry_times() {
     echo "Command: ${command} failed ${retriesNumber} times."
     return 1
 }
+
+JOB_ID_REGEX_EXTRACTOR=".*JobID ([0-9,a-f]*)"
+
+function extract_job_id_from_job_submission_return() {
+    if [[ $1 =~ $JOB_ID_REGEX_EXTRACTOR ]];
+        then
+            JOB_ID="${BASH_REMATCH[1]}";
+        else
+            JOB_ID=""
+        fi
+    echo "$JOB_ID"
+}
+

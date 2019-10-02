@@ -24,19 +24,18 @@ import org.apache.flink.streaming.api.transformations.OneInputTransformation
 import org.apache.flink.table.api.{Table, TableException}
 import org.apache.flink.table.dataformat.BaseRow
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory
-import org.apache.flink.table.planner.codegen.SinkCodeGenerator.{extractTableSinkTypeClass, generateRowConverterOperator}
+import org.apache.flink.table.planner.codegen.SinkCodeGenerator.generateRowConverterOperator
 import org.apache.flink.table.planner.codegen.{CodeGenUtils, CodeGeneratorContext}
 import org.apache.flink.table.planner.delegation.StreamPlanner
 import org.apache.flink.table.planner.plan.`trait`.{AccMode, AccModeTraitDef}
 import org.apache.flink.table.planner.plan.nodes.calcite.Sink
 import org.apache.flink.table.planner.plan.nodes.exec.{ExecNode, StreamExecNode}
-import org.apache.flink.table.planner.plan.nodes.resource.NodeResourceUtil
 import org.apache.flink.table.planner.plan.utils.UpdatingPlanChecker
 import org.apache.flink.table.planner.sinks.DataStreamTableSink
+import org.apache.flink.table.runtime.types.TypeInfoDataTypeConverter
 import org.apache.flink.table.runtime.typeutils.{BaseRowTypeInfo, TypeCheckUtils}
 import org.apache.flink.table.sinks._
 import org.apache.flink.table.types.logical.TimestampType
-import org.apache.flink.table.types.utils.TypeConversions.fromDataTypeToLegacyInfo
 
 import org.apache.calcite.plan.{RelOptCluster, RelTraitSet}
 import org.apache.calcite.rel.RelNode
@@ -97,6 +96,26 @@ class StreamExecSink[T](
             // check for append only table
             val isAppendOnlyTable = UpdatingPlanChecker.isAppendOnly(this)
             upsertSink.setIsAppendOnly(isAppendOnlyTable)
+
+            // extract unique key fields
+            // Now we pick shortest one to sink
+            // TODO UpsertStreamTableSink setKeyFields interface should be Array[Array[String]]
+            val tableKeys = {
+              UpdatingPlanChecker.getUniqueKeyFields(getInput, planner) match {
+                case Some(keys) => keys.sortBy(_.length).headOption
+                case None => None
+              }
+            }
+
+            // check that we have keys if the table has changes (is not append-only)
+            tableKeys match {
+              case Some(keys) => upsertSink.setKeyFields(keys)
+              case None if isAppendOnlyTable => upsertSink.setKeyFields(null)
+              case None if !isAppendOnlyTable => throw new TableException(
+                "UpsertStreamTableSink requires that Table has" +
+                    " a full primary keys if it is updated.")
+            }
+
             translateToTransformation(withChangeFlag = true, planner)
 
           case _: AppendStreamTableSink[T] =>
@@ -124,26 +143,6 @@ class StreamExecSink[T](
           throw new TableException("The StreamTableSink#consumeDataStream(DataStream) must be " +
             "implemented and return the sink transformation DataStreamSink. " +
             s"However, ${sink.getClass.getCanonicalName} doesn't implement this method.")
-        }
-        val configSinkParallelism = NodeResourceUtil.getSinkParallelism(
-          planner.getTableConfig.getConfiguration)
-
-        val maxSinkParallelism = dsSink.getTransformation.getMaxParallelism
-
-        // only set user's parallelism when user defines a sink parallelism
-        if (configSinkParallelism > 0) {
-          // set the parallelism when user's parallelism is not larger than max parallelism or
-          // max parallelism is not set
-          if (maxSinkParallelism < 0 || configSinkParallelism <= maxSinkParallelism) {
-            dsSink.getTransformation.setParallelism(configSinkParallelism)
-          }
-        }
-        if (!UpdatingPlanChecker.isAppendOnly(this) &&
-            dsSink.getTransformation.getParallelism != transformation.getParallelism) {
-          throw new TableException(s"The configured sink parallelism should be equal to the" +
-              " input node when input is an update stream. The input parallelism is " +
-              "${transformation.getParallelism}, however the configured sink parallelism is " +
-              "${dsSink.getTransformation.getParallelism}.")
         }
         dsSink.getTransformation
 
@@ -212,9 +211,8 @@ class StreamExecSink[T](
       parTransformation.getOutputType
     }
     val resultDataType = sink.getConsumedDataType
-    val resultType = fromDataTypeToLegacyInfo(resultDataType)
-    val typeClass = extractTableSinkTypeClass(sink)
-    if (CodeGenUtils.isInternalClass(typeClass, resultDataType)) {
+    val resultType = TypeInfoDataTypeConverter.fromDataTypeToTypeInfo(resultDataType)
+    if (CodeGenUtils.isInternalClass(resultDataType)) {
       parTransformation.asInstanceOf[Transformation[T]]
     } else {
       val (converterOperator, outputTypeInfo) = generateRowConverterOperator[T](

@@ -144,7 +144,7 @@ class BatchExecRank(
           // If partialKey is enabled, try to use partial key to satisfy the required distribution
           val tableConfig = FlinkRelOptUtil.getTableConfigFromContext(this)
           val partialKeyEnabled = tableConfig.getConfiguration.getBoolean(
-            BatchExecJoinRuleBase.SQL_OPTIMIZER_SHUFFLE_PARTIAL_KEY_ENABLED)
+            BatchExecJoinRuleBase.TABLE_OPTIMIZER_SHUFFLE_BY_PARTIAL_KEY_ENABLED)
           partialKeyEnabled && partitionKeyList.containsAll(shuffleKeys)
         }
       case _ => false
@@ -288,17 +288,9 @@ class BatchExecRank(
 
     new OneInputTransformation(
       input,
-      getOperatorName,
+      getRelDetailedDescription,
       operator,
       BaseRowTypeInfo.of(outputType),
-      getResource.getParallelism)
-  }
-
-  private def getOperatorName: String = {
-    if (isGlobal) {
-      "GlobalRank"
-    } else {
-      "LocalRank"
-    }
+      input.getParallelism)
   }
 }

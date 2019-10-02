@@ -22,17 +22,19 @@
   # List of additional classes and packages to import.
   # Example. "org.apache.calcite.sql.*", "java.util.List".
   imports: [
+    "org.apache.calcite.sql.ExtendedSqlRowTypeNameSpec",
+    "org.apache.calcite.sql.SqlMapTypeNameSpec",
     "org.apache.flink.sql.parser.ddl.SqlCreateTable",
     "org.apache.flink.sql.parser.ddl.SqlDropTable"
     "org.apache.flink.sql.parser.ddl.SqlCreateTable.TableCreationContext",
     "org.apache.flink.sql.parser.ddl.SqlCreateView",
     "org.apache.flink.sql.parser.ddl.SqlDropView",
     "org.apache.flink.sql.parser.ddl.SqlTableColumn",
+    "org.apache.flink.sql.parser.ddl.SqlTableOption",
     "org.apache.flink.sql.parser.dml.RichSqlInsert",
     "org.apache.flink.sql.parser.dml.RichSqlInsertKeyword",
-    "org.apache.flink.sql.parser.type.SqlArrayType",
-    "org.apache.flink.sql.parser.type.SqlMapType",
-    "org.apache.flink.sql.parser.type.SqlRowType",
+    "org.apache.flink.sql.parser.type.ExtendedSqlBasicTypeNameSpec",
+    "org.apache.flink.sql.parser.type.ExtendedSqlCollectionTypeNameSpec",
     "org.apache.flink.sql.parser.utils.SqlTimeUnit",
     "org.apache.flink.sql.parser.validate.FlinkSqlConformance",
     "org.apache.flink.sql.parser.SqlProperty",
@@ -53,7 +55,9 @@
     "FROM_SOURCE",
     "BOUNDED",
     "DELAY",
-    "OVERWRITE"
+    "OVERWRITE",
+    "STRING",
+    "BYTES"
   ]
 
   # List of keywords from "keywords" section that are not reserved.
@@ -384,13 +388,14 @@
   literalParserMethods: [
   ]
 
-  # List of methods for parsing custom data types.
-  # Return type of method implementation should be "SqlIdentifier".
+  # List of methods for parsing ddl supported data types.
+  # Return type of method implementation should be "SqlTypeNameSpec".
   # Example: SqlParseTimeStampZ().
   dataTypeParserMethods: [
-    "SqlArrayType()",
-    "SqlMapType()",
-    "SqlRowType()"
+    "ExtendedSqlBasicTypeName()",
+    "CustomizedCollectionsTypeName()",
+    "SqlMapTypeName()",
+    "ExtendedSqlRowTypeName()"
   ]
 
   # List of methods for parsing builtin function calls.
@@ -419,6 +424,14 @@
     "SqlDropView"
   ]
 
+  # Binary operators tokens
+  binaryOperatorsTokens: [
+  ]
+
+  # Binary operators initialization
+  extraBinaryExpressions: [
+  ]
+
   # List of files in @includes directory that have parser method
   # implementations for parsing custom SQL statements, literals or types
   # given as part of "statementParserMethods", "literalParserMethods" or
@@ -432,6 +445,7 @@
   joinTypes: [
   ]
 
+  includePosixOperators: false
   includeCompoundIdentifier: true
   includeBraces: true
   includeAdditionalDeclarations: false

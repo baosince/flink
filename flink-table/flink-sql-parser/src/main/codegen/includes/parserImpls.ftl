@@ -55,14 +55,7 @@ void TableColumn2(List<SqlNode> list) :
 }
 {
     name = SimpleIdentifier()
-    type = DataType()
-    (
-        <NULL> { type = type.withNullable(true); }
-    |
-        <NOT> <NULL> { type = type.withNullable(false); }
-    |
-        { type = type.withNullable(true); }
-    )
+    type = ExtendedDataType()
     [ <COMMENT> <QUOTED_STRING> {
         String p = SqlParserUtil.parseString(token.image);
         comment = SqlLiteral.createCharString(p, getPos());
@@ -70,6 +63,35 @@ void TableColumn2(List<SqlNode> list) :
     {
         SqlTableColumn tableColumn = new SqlTableColumn(name, type, comment, getPos());
         list.add(tableColumn);
+    }
+}
+
+/**
+* Different with {@link #DataType()}, we support a [ NULL | NOT NULL ] suffix syntax for both the
+* collection element data type and the data type itself.
+*
+* <p>See {@link #SqlDataTypeSpec} for the syntax details of {@link #DataType()}.
+*/
+SqlDataTypeSpec ExtendedDataType() :
+{
+    SqlTypeNameSpec typeName;
+    final Span s;
+    boolean elementNullable = true;
+    boolean nullable = true;
+}
+{
+    <#-- #DataType does not take care of the nullable attribute. -->
+    typeName = TypeName() {
+        s = span();
+    }
+    (
+        LOOKAHEAD(3)
+        elementNullable = NullableOptDefaultTrue()
+        typeName = ExtendedCollectionsTypeName(typeName, elementNullable)
+    )*
+    nullable = NullableOptDefaultTrue()
+    {
+        return new SqlDataTypeSpec(typeName, s.end(this)).withNullable(nullable);
     }
 }
 
@@ -107,18 +129,18 @@ void UniqueKey(List<SqlNodeList> list) :
     }
 }
 
-SqlNode PropertyValue() :
+SqlNode TableOption() :
 {
-    SqlIdentifier key;
+    SqlNode key;
     SqlNode value;
     SqlParserPos pos;
 }
 {
-    key = CompoundIdentifier()
+    key = StringLiteral()
     { pos = getPos(); }
     <EQ> value = StringLiteral()
     {
-        return new SqlProperty(key, value, getPos());
+        return new SqlTableOption(key, value, getPos());
     }
 }
 
@@ -132,12 +154,12 @@ SqlNodeList TableProperties():
 {
     <LPAREN> { span = span(); }
     [
-        property = PropertyValue()
+        property = TableOption()
         {
             proList.add(property);
         }
         (
-            <COMMA> property = PropertyValue()
+            <COMMA> property = TableOption()
             {
                 proList.add(property);
             }
@@ -367,53 +389,204 @@ SqlDrop SqlDropView(Span s, boolean replace) :
     }
 }
 
-SqlIdentifier SqlArrayType() :
+/**
+* A sql type name extended basic data type, it has a counterpart basic
+* sql type name but always represents as a special alias compared with the standard name.
+*
+* <p>For example, STRING is synonym of VARCHAR(INT_MAX)
+* and BYTES is synonym of VARBINARY(INT_MAX).
+*/
+SqlTypeNameSpec ExtendedSqlBasicTypeName() :
 {
-    SqlParserPos pos;
-    SqlDataTypeSpec elementType;
+    final SqlTypeName typeName;
+    final String typeAlias;
+    int precision = -1;
 }
 {
-    <ARRAY> { pos = getPos(); }
-    <LT> elementType = DataType()
-    <GT>
+    (
+        <STRING> {
+            typeName = SqlTypeName.VARCHAR;
+            typeAlias = token.image;
+            precision = Integer.MAX_VALUE;
+        }
+    |
+        <BYTES> {
+            typeName = SqlTypeName.VARBINARY;
+            typeAlias = token.image;
+            precision = Integer.MAX_VALUE;
+        }
+    )
     {
-        return new SqlArrayType(pos, elementType);
+        return new ExtendedSqlBasicTypeNameSpec(typeAlias, typeName, precision, getPos());
     }
 }
 
-SqlIdentifier SqlMapType() :
+/*
+* Parses collection type name that does not belong to standard SQL, i.e. ARRAY&lt;INT NOT NULL&gt;.
+*/
+SqlTypeNameSpec CustomizedCollectionsTypeName() :
+{
+    final SqlTypeName collectionTypeName;
+    final SqlTypeNameSpec elementTypeName;
+    boolean elementNullable = true;
+}
+{
+    (
+        <ARRAY> {
+            collectionTypeName = SqlTypeName.ARRAY;
+        }
+    |
+        <MULTISET> {
+            collectionTypeName = SqlTypeName.MULTISET;
+        }
+    )
+    <LT>
+    elementTypeName = TypeName()
+    elementNullable = NullableOptDefaultTrue()
+    <GT>
+    {
+        return new ExtendedSqlCollectionTypeNameSpec(
+            elementTypeName,
+            elementNullable,
+            collectionTypeName,
+            false,
+            getPos());
+    }
+}
+
+/**
+* Parse a collection type name, the input element type name may
+* also be a collection type. Different with #CollectionsTypeName,
+* the element type can have a [ NULL | NOT NULL ] suffix, default is NULL(nullable).
+*/
+SqlTypeNameSpec ExtendedCollectionsTypeName(
+        SqlTypeNameSpec elementTypeName,
+        boolean elementNullable) :
+{
+    final SqlTypeName collectionTypeName;
+}
+{
+    (
+        <MULTISET> { collectionTypeName = SqlTypeName.MULTISET; }
+    |
+         <ARRAY> { collectionTypeName = SqlTypeName.ARRAY; }
+    )
+    {
+        return new ExtendedSqlCollectionTypeNameSpec(
+             elementTypeName,
+             elementNullable,
+             collectionTypeName,
+             true,
+             getPos());
+    }
+}
+
+/** Parses a SQL map type, e.g. MAP&lt;INT NOT NULL, VARCHAR NULL&gt;. */
+SqlTypeNameSpec SqlMapTypeName() :
 {
     SqlDataTypeSpec keyType;
     SqlDataTypeSpec valType;
+    boolean nullable = true;
 }
 {
     <MAP>
-    <LT> keyType = DataType()
-    <COMMA> valType = DataType()
+    <LT>
+    keyType = ExtendedDataType()
+    <COMMA>
+    valType = ExtendedDataType()
     <GT>
     {
-        return new SqlMapType(getPos(), keyType, valType);
+        return new SqlMapTypeNameSpec(keyType, valType, getPos());
     }
 }
 
-SqlIdentifier SqlRowType() :
+/**
+* Parse a "name1 type1 [ NULL | NOT NULL] [ comment ]
+* [, name2 type2 [ NULL | NOT NULL] [ comment ] ]* ..." list.
+* The comment and NULL syntax doest not belong to standard SQL.
+*/
+void ExtendedFieldNameTypeCommaList(
+        List<SqlIdentifier> fieldNames,
+        List<SqlDataTypeSpec> fieldTypes,
+        List<SqlCharStringLiteral> comments) :
 {
-    SqlParserPos pos;
-    List<SqlIdentifier> fieldNames = new ArrayList<SqlIdentifier>();
-    List<SqlDataTypeSpec> fieldTypes = new ArrayList<SqlDataTypeSpec>();
+    SqlIdentifier fName;
+    SqlDataTypeSpec fType;
+    boolean nullable;
 }
 {
-    <ROW> { pos = getPos(); SqlIdentifier fName; SqlDataTypeSpec fType;}
-    <LT>
-    fName = SimpleIdentifier() <COLON> fType = DataType()
-    { fieldNames.add(fName); fieldTypes.add(fType); }
+    [
+        fName = SimpleIdentifier()
+        fType = ExtendedDataType()
+        {
+            fieldNames.add(fName);
+            fieldTypes.add(fType);
+        }
+        (
+            <QUOTED_STRING> {
+                String p = SqlParserUtil.parseString(token.image);
+                comments.add(SqlLiteral.createCharString(p, getPos()));
+            }
+        |
+            { comments.add(null); }
+        )
+    ]
     (
         <COMMA>
-        fName = SimpleIdentifier() <COLON> fType = DataType()
-        { fieldNames.add(fName); fieldTypes.add(fType); }
+        fName = SimpleIdentifier()
+        fType = ExtendedDataType()
+        {
+            fieldNames.add(fName);
+            fieldTypes.add(fType);
+        }
+        (
+            <QUOTED_STRING> {
+                String p = SqlParserUtil.parseString(token.image);
+                comments.add(SqlLiteral.createCharString(p, getPos()));
+            }
+        |
+            { comments.add(null); }
+        )
     )*
-    <GT>
+}
+
+/**
+* Parse Row type, we support both Row(name1 type1, name2 type2)
+* and Row&lt;name1 type1, name2 type2&gt;.
+* Every item type can have a suffix of `NULL` or `NOT NULL` to indicate if this type is nullable.
+* i.e. Row(f0 int not null, f1 varchar null). Default is nullable.
+*
+* <p>The difference with {@link #SqlRowTypeName()}:
+* <ul>
+*   <li>Support comment syntax for every field</li>
+*   <li>Field data type default is nullable</li>
+*   <li>Support ROW type with empty fields, e.g. ROW()</li>
+* </ul>
+*/
+SqlTypeNameSpec ExtendedSqlRowTypeName() :
+{
+    List<SqlIdentifier> fieldNames = new ArrayList<SqlIdentifier>();
+    List<SqlDataTypeSpec> fieldTypes = new ArrayList<SqlDataTypeSpec>();
+    List<SqlCharStringLiteral> comments = new ArrayList<SqlCharStringLiteral>();
+    final boolean unparseAsStandard;
+}
+{
+    <ROW>
+    (
+        <NE> { unparseAsStandard = false; }
+    |
+        <LT> ExtendedFieldNameTypeCommaList(fieldNames, fieldTypes, comments) <GT>
+        { unparseAsStandard = false; }
+    |
+        <LPAREN> ExtendedFieldNameTypeCommaList(fieldNames, fieldTypes, comments) <RPAREN>
+        { unparseAsStandard = true; }
+    )
     {
-        return new SqlRowType(pos, fieldNames, fieldTypes);
+        return new ExtendedSqlRowTypeNameSpec(
+            getPos(),
+            fieldNames,
+            fieldTypes,
+            comments,
+            unparseAsStandard);
     }
 }

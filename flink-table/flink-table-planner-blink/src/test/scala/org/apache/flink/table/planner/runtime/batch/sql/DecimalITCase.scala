@@ -412,25 +412,6 @@ class DecimalITCase extends BatchTestBase {
       s1r(d"3.12"))
   }
 
-  @Test
-  def testDiv(): Unit = {
-
-    // see DivCallGen
-    checkQuery1(
-      Seq(DECIMAL(7, 0), INT),
-      s1r(d"7", 2),
-      "select div(f0, f1), div(100*f1, f0) from Table1",
-      Seq(DECIMAL(7, 0), DECIMAL(10, 0)),
-      s1r(3, 200 / 7))
-
-    checkQuery1(
-      Seq(DECIMAL(10, 1), DECIMAL(10, 3)),
-      s1r(d"7.9", d"2.009"),
-      "select div(f0, f1), div(100*f1, f0) from Table1",
-      Seq(DECIMAL(12, 0), DECIMAL(18, 0)),
-      s1r(3, 2009 / 79))
-  }
-
   @Test // functions that treat Decimal as exact value
   def testExactFunctions(): Unit = {
     checkQuery1(
@@ -774,7 +755,7 @@ class DecimalITCase extends BatchTestBase {
   @Test
   def testJoin1(): Unit = {
     tEnv.getConfig.getConfiguration.setString(
-      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+      ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
 
     checkQuery1(
       Seq(DECIMAL(8, 2), DECIMAL(8, 4), INT, DOUBLE),
@@ -787,7 +768,7 @@ class DecimalITCase extends BatchTestBase {
   @Test
   def testJoin2(): Unit = {
     tEnv.getConfig.getConfiguration.setString(
-      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+      ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
 
     checkQuery1(
       Seq(DECIMAL(8, 2), DECIMAL(8, 4), INT, DOUBLE),
@@ -800,7 +781,7 @@ class DecimalITCase extends BatchTestBase {
   @Test
   def testJoin3(): Unit = {
     tEnv.getConfig.getConfiguration.setString(
-      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+      ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
 
     checkQuery1(
       Seq(DECIMAL(8, 2), DECIMAL(8, 4), INT, DOUBLE),
@@ -814,7 +795,7 @@ class DecimalITCase extends BatchTestBase {
   @Test
   def testJoin4(): Unit = {
     tEnv.getConfig.getConfiguration.setString(
-      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+      ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
 
     checkQuery1(
       Seq(DECIMAL(8, 2), DECIMAL(8, 4), INT, DOUBLE),
@@ -827,7 +808,7 @@ class DecimalITCase extends BatchTestBase {
   @Test
   def testJoin5(): Unit = {
     tEnv.getConfig.getConfiguration.setString(
-      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+      ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
 
     checkQuery1(
       Seq(DECIMAL(8, 2), DECIMAL(8, 4), INT, DOUBLE),
@@ -840,7 +821,7 @@ class DecimalITCase extends BatchTestBase {
   @Test
   def testJoin6(): Unit = {
     tEnv.getConfig.getConfiguration.setString(
-      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+      ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
 
     checkQuery1(
       Seq(DECIMAL(8, 2), DECIMAL(8, 4), INT, DOUBLE),
@@ -853,7 +834,7 @@ class DecimalITCase extends BatchTestBase {
   @Test
   def testJoin7(): Unit = {
     tEnv.getConfig.getConfiguration.setString(
-      ExecutionConfigOptions.SQL_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
+      ExecutionConfigOptions.TABLE_EXEC_DISABLED_OPERATORS, "HashJoin, NestedLoopJoin")
     checkQuery1(
       Seq(DECIMAL(8, 2), DECIMAL(8, 4), INT, DOUBLE),
       s1r(d"1", d"1", 1, 1.0),

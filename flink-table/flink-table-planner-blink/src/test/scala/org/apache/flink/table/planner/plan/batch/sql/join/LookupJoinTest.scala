@@ -86,6 +86,28 @@ class LookupJoinTest extends TableTestBase {
   }
 
   @Test
+  def testNotDistinctFromInJoinCondition(): Unit = {
+
+    // does not support join condition contains `IS NOT DISTINCT`
+    expectExceptionThrown(
+      "SELECT * FROM MyTable AS T LEFT JOIN temporalTest " +
+        "FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a IS NOT  DISTINCT FROM D.id",
+      "LookupJoin doesn't support join condition contains 'a IS NOT DISTINCT FROM b' (or " +
+        "alternative '(a = b) or (a IS NULL AND b IS NULL)')",
+      classOf[TableException]
+    )
+
+    // does not support join condition contains `IS NOT  DISTINCT` and similar syntax
+    expectExceptionThrown(
+      "SELECT * FROM MyTable AS T LEFT JOIN temporalTest " +
+        "FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id OR (T.a IS NULL AND D.id IS NULL)",
+      "LookupJoin doesn't support join condition contains 'a IS NOT DISTINCT FROM b' (or " +
+        "alternative '(a = b) or (a IS NULL AND b IS NULL)')",
+      classOf[TableException]
+    )
+  }
+
+  @Test
   def testLogicalPlan(): Unit = {
     val sql1 =
       """
@@ -225,7 +247,7 @@ class LookupJoinTest extends TableTestBase {
   @Test
   def testReusing(): Unit = {
     testUtil.tableEnv.getConfig.getConfiguration.setBoolean(
-      OptimizerConfigOptions.SQL_OPTIMIZER_REUSE_SUB_PLAN_ENABLED, true)
+      OptimizerConfigOptions.TABLE_OPTIMIZER_REUSE_SUB_PLAN_ENABLED, true)
     val sql1 =
       """
         |SELECT b, a, sum(c) c, sum(d) d, PROCTIME() as proctime

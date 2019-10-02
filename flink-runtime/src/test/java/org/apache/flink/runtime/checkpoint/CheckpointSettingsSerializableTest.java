@@ -49,6 +49,7 @@ import org.apache.flink.runtime.state.OperatorStateHandle;
 import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
 import org.apache.flink.runtime.testingUtils.TestingUtils;
+import org.apache.flink.testutils.ClassLoaderUtils;
 import org.apache.flink.util.SerializedValue;
 import org.apache.flink.util.TestLogger;
 
@@ -57,8 +58,6 @@ import org.junit.Test;
 import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.io.Serializable;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.Collection;
 import java.util.Collections;
 
@@ -75,8 +74,9 @@ public class CheckpointSettingsSerializableTest extends TestLogger {
 
 	@Test
 	public void testDeserializationOfUserCodeWithUserClassLoader() throws Exception {
-		final ClassLoader classLoader = new URLClassLoader(new URL[0], getClass().getClassLoader());
-		final Serializable outOfClassPath = CommonTestUtils.createObjectForClassNotInClassPath(classLoader);
+		final ClassLoaderUtils.ObjectAndClassLoader<Serializable> outsideClassLoading = ClassLoaderUtils.createSerializableObjectFromNewClassLoader();
+		final ClassLoader classLoader = outsideClassLoading.getClassLoader();
+		final Serializable outOfClassPath = outsideClassLoading.getObject();
 
 		final MasterTriggerRestoreHook.Factory[] hooks = {
 				new TestFactory(outOfClassPath) };

@@ -105,7 +105,7 @@ class StreamExecMatch(
     val fieldNames = inputRowType.getFieldNames.toList
     super.explainTerms(pw)
       .itemIf("partitionBy",
-        fieldToString(getPartitionKeyIndexes, inputRowType),
+        fieldToString(logicalMatch.partitionKeys.toArray, inputRowType),
         !logicalMatch.partitionKeys.isEmpty)
       .itemIf("orderBy",
         collationToString(logicalMatch.orderKeys, inputRowType),
@@ -231,13 +231,14 @@ class StreamExecMatch(
       val outputRowTypeInfo = BaseRowTypeInfo.of(FlinkTypeFactory.toLogicalRowType(getRowType))
       val transformation = new OneInputTransformation[BaseRow, BaseRow](
         timestampedInput,
-        toString,
+        getRelDetailedDescription,
         operator,
         outputRowTypeInfo,
-        getResource.getParallelism
+        timestampedInput.getParallelism
       )
-      if (getResource.getMaxParallelism > 0) {
-        transformation.setMaxParallelism(getResource.getMaxParallelism)
+      if (inputsContainSingleton()) {
+        transformation.setParallelism(1)
+        transformation.setMaxParallelism(1)
       }
       setKeySelector(transformation, inputTypeInfo)
       transformation
@@ -293,9 +294,10 @@ class StreamExecMatch(
           s"rowtime field: ($timeOrderField)",
           new ProcessOperator(new RowtimeProcessFunction(timeIdx, inputTypeInfo)),
           inputTypeInfo,
-          getResource.getParallelism)
-        if (getResource.getMaxParallelism > 0) {
-          transformation.setMaxParallelism(getResource.getMaxParallelism)
+          inputTransform.getParallelism)
+        if (inputsContainSingleton()) {
+          transformation.setParallelism(1)
+          transformation.setMaxParallelism(1)
         }
         transformation
       } else {
@@ -305,16 +307,12 @@ class StreamExecMatch(
     (timestampedInputTransform, eventComparator)
   }
 
-  private def getPartitionKeyIndexes: Array[Int] = {
-    logicalMatch.partitionKeys.map {
-      case inputRef: RexInputRef => inputRef.getIndex
-    }.toArray
-  }
-
   private def setKeySelector(
       transform: OneInputTransformation[BaseRow, _],
       inputTypeInfo: BaseRowTypeInfo): Unit = {
-    val selector = KeySelectorUtil.getBaseRowSelector(getPartitionKeyIndexes, inputTypeInfo)
+    val selector = KeySelectorUtil.getBaseRowSelector(
+      logicalMatch.partitionKeys.toArray,
+      inputTypeInfo)
     transform.setStateKeySelector(selector)
     transform.setStateKeyType(selector.getProducedType)
   }

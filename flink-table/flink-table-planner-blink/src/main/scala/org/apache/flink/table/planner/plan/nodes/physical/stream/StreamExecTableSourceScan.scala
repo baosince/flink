@@ -19,9 +19,7 @@
 package org.apache.flink.table.planner.plan.nodes.physical.stream
 
 import org.apache.flink.api.dag.Transformation
-import org.apache.flink.api.java.typeutils.TypeExtractor
 import org.apache.flink.streaming.api.datastream.DataStream
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 import org.apache.flink.streaming.api.functions.{AssignerWithPeriodicWatermarks, AssignerWithPunctuatedWatermarks}
 import org.apache.flink.streaming.api.watermark.Watermark
 import org.apache.flink.table.api.{DataTypes, TableException}
@@ -36,9 +34,9 @@ import org.apache.flink.table.planner.plan.schema.FlinkRelOptTable
 import org.apache.flink.table.planner.plan.utils.ScanUtil
 import org.apache.flink.table.planner.sources.TableSourceUtil
 import org.apache.flink.table.runtime.operators.AbstractProcessStreamOperator
+import org.apache.flink.table.runtime.types.TypeInfoDataTypeConverter
 import org.apache.flink.table.sources.wmstrategies.{PeriodicWatermarkAssigner, PreserveWatermarks, PunctuatedWatermarkAssigner}
 import org.apache.flink.table.sources.{RowtimeAttributeDescriptor, StreamTableSource}
-import org.apache.flink.table.types.utils.TypeConversions.fromLegacyInfoToDataType
 import org.apache.flink.table.types.{DataType, FieldsDataType}
 import org.apache.flink.types.Row
 
@@ -61,9 +59,6 @@ class StreamExecTableSourceScan(
   extends PhysicalTableSourceScan(cluster, traitSet, relOptTable)
   with StreamPhysicalRel
   with StreamExecNode[BaseRow] {
-
-  // cache table source transformation.
-  private var sourceTransform: Transformation[_] = _
 
   override def producesUpdates: Boolean = false
 
@@ -97,31 +92,21 @@ class StreamExecTableSourceScan(
     replaceInput(ordinalInParent, newInputNode.asInstanceOf[RelNode])
   }
 
-  def getSourceTransformation(
-      streamEnv: StreamExecutionEnvironment): Transformation[_] = {
-    if (sourceTransform == null) {
-      sourceTransform = tableSource.asInstanceOf[StreamTableSource[_]].
-          getDataStream(streamEnv).getTransformation
-    }
-    sourceTransform
-  }
-
   override protected def translateToPlanInternal(
       planner: StreamPlanner): Transformation[BaseRow] = {
     val config = planner.getTableConfig
     val inputTransform = getSourceTransformation(planner.getExecEnv)
-    inputTransform.setParallelism(getResource.getParallelism)
 
     val fieldIndexes = TableSourceUtil.computeIndexMapping(
       tableSource,
       isStreamTable = true,
       tableSourceTable.selectedFields)
 
-    val inputDataType = fromLegacyInfoToDataType(inputTransform.getOutputType)
+    val inputDataType = inputTransform.getOutputType
     val producedDataType = tableSource.getProducedDataType
 
     // check that declared and actual type of table source DataStream are identical
-    if (inputDataType != producedDataType) {
+    if (inputDataType != TypeInfoDataTypeConverter.fromDataTypeToTypeInfo(producedDataType)) {
       throw new TableException(s"TableSource of type ${tableSource.getClass.getCanonicalName} " +
         s"returned a DataStream of data type $producedDataType that does not match with the " +
         s"data type $producedDataType declared by the TableSource.getProducedDataType() method. " +
@@ -157,7 +142,6 @@ class StreamExecTableSourceScan(
         rowtimeExpression,
         beforeConvert = extractElement,
         afterConvert = resetElement)
-      conversionTransform.setParallelism(getResource.getParallelism)
       conversionTransform
     } else {
       inputTransform.asInstanceOf[Transformation[BaseRow]]
@@ -188,7 +172,6 @@ class StreamExecTableSourceScan(
       // No need to generate watermarks if no rowtime attribute is specified.
       ingestedTable
     }
-    withWatermarks.getTransformation.setParallelism(getResource.getParallelism)
     withWatermarks.getTransformation
   }
 
@@ -198,11 +181,7 @@ class StreamExecTableSourceScan(
       isStreamTable = true,
       tableSourceTable.selectedFields)
     ScanUtil.hasTimeAttributeField(fieldIndexes) ||
-      ScanUtil.needsConversion(
-        tableSource.getProducedDataType,
-        TypeExtractor.createTypeInfo(
-          tableSource, classOf[StreamTableSource[_]], tableSource.getClass, 0)
-          .getTypeClass.asInstanceOf[Class[_]])
+      ScanUtil.needsConversion(tableSource.getProducedDataType)
   }
 }
 

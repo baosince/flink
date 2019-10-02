@@ -36,13 +36,13 @@ import org.apache.flink.table.planner.plan.utils.{FlinkRelMdUtil, JoinUtil}
 import org.apache.flink.table.runtime.operators.join.{HashJoinOperator, HashJoinType}
 import org.apache.flink.table.runtime.typeutils.{BaseRowTypeInfo, BinaryRowSerializer}
 import org.apache.flink.table.types.logical.RowType
-
 import org.apache.calcite.plan._
 import org.apache.calcite.rel.core._
 import org.apache.calcite.rel.metadata.RelMetadataQuery
 import org.apache.calcite.rel.{RelNode, RelWriter}
 import org.apache.calcite.rex.RexNode
 import org.apache.calcite.util.Util
+import org.apache.flink.configuration.MemorySize
 
 import java.util
 
@@ -201,8 +201,9 @@ class BatchExecHashJoin(
     val rType = rInput.getOutputType.asInstanceOf[BaseRowTypeInfo].toRowType
 
     val keyType = RowType.of(leftKeys.map(lType.getChildren().get(_)): _*)
-    val managedMemoryInMB = config.getConfiguration.getInteger(
-      ExecutionConfigOptions.SQL_RESOURCE_HASH_JOIN_TABLE_MEM)
+    val memText = config.getConfiguration.getString(
+      ExecutionConfigOptions.TABLE_EXEC_RESOURCE_HASH_JOIN_MEMORY)
+    val managedMemoryInMB = MemorySize.parse(memText).getMebiBytes
     val managedMemory = managedMemoryInMB * NodeResourceUtil.SIZE_IN_MB
     val condFunc = JoinUtil.generateConditionFunction(
       config, cluster.getRexBuilder, getJoinInfo, lType, rType)
@@ -264,22 +265,12 @@ class BatchExecHashJoin(
     val ret = new TwoInputTransformation[BaseRow, BaseRow, BaseRow](
       build,
       probe,
-      getOperatorName,
+      getRelDetailedDescription,
       operator,
       BaseRowTypeInfo.of(FlinkTypeFactory.toLogicalRowType(getRowType)),
-      getResource.getParallelism)
+      probe.getParallelism)
     val resource = NodeResourceUtil.fromManagedMem(managedMemoryInMB)
     ret.setResources(resource, resource)
     ret
-  }
-
-  private def getOperatorName: String = {
-    val joinExpressionStr = if (getCondition != null) {
-      val inFields = inputRowType.getFieldNames.toList
-      s"where: ${getExpressionString(getCondition, inFields, None, ExpressionFormat.Infix)}, "
-    } else {
-      ""
-    }
-    s"HashJoin($joinExpressionStr${if (leftIsBuild) "buildLeft" else "buildRight"})"
   }
 }

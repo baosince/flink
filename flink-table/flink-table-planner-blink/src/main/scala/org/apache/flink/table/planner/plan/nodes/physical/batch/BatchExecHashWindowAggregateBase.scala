@@ -37,13 +37,13 @@ import org.apache.flink.table.planner.plan.utils.FlinkRelMdUtil
 import org.apache.flink.table.runtime.operators.CodeGenOperatorFactory
 import org.apache.flink.table.runtime.operators.aggregate.BytesHashMap
 import org.apache.flink.table.runtime.typeutils.BaseRowTypeInfo
-
 import org.apache.calcite.plan.{RelOptCluster, RelOptCost, RelOptPlanner, RelTraitSet}
 import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rel.`type`.RelDataType
 import org.apache.calcite.rel.core.AggregateCall
 import org.apache.calcite.rel.metadata.RelMetadataQuery
 import org.apache.calcite.tools.RelBuilder
+import org.apache.flink.configuration.MemorySize
 
 import java.util
 
@@ -116,8 +116,6 @@ abstract class BatchExecHashWindowAggregateBase(
     replaceInput(ordinalInParent, newInputNode.asInstanceOf[RelNode])
   }
 
-  def getOperatorName: String
-
   override protected def translateToPlanInternal(
       planner: BatchPlanner): Transformation[BaseRow] = {
     val config = planner.getTableConfig
@@ -131,12 +129,13 @@ abstract class BatchExecHashWindowAggregateBase(
       aggCallToAggFunction.map(_._1), aggInputRowType)
 
     val groupBufferLimitSize = config.getConfiguration.getInteger(
-      ExecutionConfigOptions.SQL_EXEC_WINDOW_AGG_BUFFER_SIZE_LIMIT)
+      ExecutionConfigOptions.TABLE_EXEC_WINDOW_AGG_BUFFER_SIZE_LIMIT)
 
     val (windowSize: Long, slideSize: Long) = WindowCodeGenerator.getWindowDef(window)
 
-    val managedMemoryInMB = config.getConfiguration.getInteger(
-      ExecutionConfigOptions.SQL_RESOURCE_HASH_AGG_TABLE_MEM)
+    val memText = config.getConfiguration.getString(
+      ExecutionConfigOptions.TABLE_EXEC_RESOURCE_HASH_AGG_MEMORY)
+    val managedMemoryInMB = MemorySize.parse(memText).getMebiBytes
     val managedMemory = managedMemoryInMB * NodeResourceUtil.SIZE_IN_MB
 
     val generatedOperator = new HashWindowCodeGenerator(
@@ -148,10 +147,10 @@ abstract class BatchExecHashWindowAggregateBase(
     val operator = new CodeGenOperatorFactory[BaseRow](generatedOperator)
     val ret = new OneInputTransformation(
       input,
-      getOperatorName,
+      getRelDetailedDescription,
       operator,
       BaseRowTypeInfo.of(outputType),
-      getResource.getParallelism)
+      input.getParallelism)
     val resource = NodeResourceUtil.fromManagedMem(managedMemoryInMB)
     ret.setResources(resource, resource)
     ret

@@ -33,11 +33,11 @@ import org.apache.calcite.plan._
 import org.apache.calcite.plan.hep.HepRelVertex
 import org.apache.calcite.rel.`type`.RelDataType
 import org.apache.calcite.rel.core.Aggregate.Group
+import org.apache.calcite.rel.core.{Aggregate, AggregateCall}
 import org.apache.calcite.rel.logical.{LogicalAggregate, LogicalProject}
 import org.apache.calcite.rex._
+import org.apache.calcite.sql.`type`.SqlTypeUtil
 import org.apache.calcite.util.ImmutableBitSet
-
-import _root_.java.math.BigDecimal
 
 import _root_.scala.collection.JavaConversions._
 
@@ -84,15 +84,31 @@ abstract class LogicalWindowAggregateRuleBase(description: String)
       .project(project.getChildExps.updated(windowExprIdx, inAggGroupExpression))
       .build()
 
+    // Currently, this rule removes the window from GROUP BY operation which may lead to changes
+    // of AggCall's type which brings fails on type checks.
+    // To solve the problem, we change the types to the inferred types in the Aggregate and then
+    // cast back in the project after Aggregate.
+    val indexAndTypes = getIndexAndInferredTypesIfChanged(agg)
+    val finalCalls = adjustTypes(agg, indexAndTypes)
+
     // we don't use the builder here because it uses RelMetadataQuery which affects the plan
     val newAgg = LogicalAggregate.create(
       newProject,
       agg.indicator,
       newGroupSet,
       ImmutableList.of(newGroupSet),
-      agg.getAggCallList)
+      finalCalls)
 
-    // create an additional project to conform with types
+    val transformed = call.builder()
+    val windowAgg = LogicalWindowAggregate.create(
+      window,
+      Seq[PlannerNamedWindowProperty](),
+      newAgg)
+    transformed.push(windowAgg)
+
+    // The transformation adds an additional LogicalProject at the top to ensure
+    // that the types are equivalent.
+    // 1. ensure group key types, create an additional project to conform with types
     val outAggGroupExpression0 = getOutAggregateGroupExpression(rexBuilder, windowExpr)
     // fix up the nullability if it is changed.
     val outAggGroupExpression = if (windowExpr.getType.isNullable !=
@@ -103,18 +119,78 @@ abstract class LogicalWindowAggregateRuleBase(description: String)
     } else {
       outAggGroupExpression0
     }
-    val transformed = call.builder()
-    val windowAgg = LogicalWindowAggregate.create(
-      window,
-      Seq[PlannerNamedWindowProperty](),
-      newAgg)
-    // The transformation adds an additional LogicalProject at the top to ensure
-    // that the types are equivalent.
-    transformed.push(windowAgg)
-      .project(transformed.fields().patch(windowExprIdx, Seq(outAggGroupExpression), 0))
+    val projectsEnsureGroupKeyTypes =
+      transformed.fields.patch(windowExprIdx, Seq(outAggGroupExpression), 0)
+    // 2. ensure aggCall types
+    val projectsEnsureAggCallTypes =
+      projectsEnsureGroupKeyTypes.zipWithIndex.map {
+        case (aggCall, index) =>
+          val aggCallIndex = index - agg.getGroupCount
+          if (indexAndTypes.containsKey(aggCallIndex)) {
+            rexBuilder.makeCast(agg.getAggCallList.get(aggCallIndex).`type`, aggCall, true)
+          } else {
+            aggCall
+          }
+      }
+    transformed.project(projectsEnsureAggCallTypes)
 
     val result = transformed.build()
     call.transformTo(result)
+  }
+
+  /**
+   * Change the types of [[AggregateCall]] to the corresponding inferred types.
+   */
+  private def adjustTypes(
+      agg: LogicalAggregate,
+      indexAndTypes: Map[Int, RelDataType]) = {
+
+    agg.getAggCallList.zipWithIndex.map {
+      case (aggCall, index) =>
+        if (indexAndTypes.containsKey(index)) {
+          AggregateCall.create(
+            aggCall.getAggregation,
+            aggCall.isDistinct,
+            aggCall.isApproximate,
+            aggCall.ignoreNulls(),
+            aggCall.getArgList,
+            aggCall.filterArg,
+            aggCall.collation,
+            agg.getGroupCount,
+            agg.getInput,
+            indexAndTypes(index),
+            aggCall.name)
+        } else {
+          aggCall
+        }
+    }
+  }
+
+  /**
+   * Check if there are any types of [[AggregateCall]] that need to be changed. Return the
+   * [[AggregateCall]] indexes and the corresponding inferred types.
+   */
+  private def getIndexAndInferredTypesIfChanged(
+      agg: LogicalAggregate)
+    : Map[Int, RelDataType] = {
+
+    agg.getAggCallList.zipWithIndex.flatMap {
+      case (aggCall, index) =>
+        val origType = aggCall.`type`
+        val aggCallBinding = new Aggregate.AggCallBinding(
+          agg.getCluster.getTypeFactory,
+          aggCall.getAggregation,
+          SqlTypeUtil.projectTypes(agg.getInput.getRowType, aggCall.getArgList),
+          0,
+          aggCall.hasFilter)
+        val inferredType = aggCall.getAggregation.inferReturnType(aggCallBinding)
+
+        if (origType != inferredType && agg.getGroupCount == 1) {
+          Some(index, inferredType)
+        } else {
+          None
+        }
+    }.toMap
   }
 
   private[table] def getWindowExpressions(agg: LogicalAggregate): Seq[(RexCall, Int)] = {
@@ -169,11 +245,6 @@ abstract class LogicalWindowAggregateRuleBase(description: String)
       windowExpr: RexCall,
       windowExprIdx: Int,
       rowType: RelDataType): LogicalWindow = {
-    def getOperandAsLong(call: RexCall, idx: Int): Long =
-      call.getOperands.get(idx) match {
-        case v: RexLiteral => v.getValue.asInstanceOf[BigDecimal].longValue()
-        case _ => throw new TableException("Only constant window descriptors are supported")
-      }
 
     val timeField = getTimeFieldReference(windowExpr.getOperands.get(0), windowExprIdx, rowType)
     val resultType = Some(fromDataTypeToLogicalType(timeField.getOutputDataType))
@@ -210,4 +281,9 @@ abstract class LogicalWindowAggregateRuleBase(description: String)
       operand: RexNode,
       windowExprIdx: Int,
       rowType: RelDataType): FieldReferenceExpression
+
+  /**
+    * get operand value as Long type
+    */
+  def getOperandAsLong(call: RexCall, idx: Int): Long
 }

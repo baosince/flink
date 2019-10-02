@@ -49,6 +49,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -278,7 +279,7 @@ public class CliClient {
 			case USE_CATALOG:
 				callUseCatalog(cmdCall);
 				break;
-			case USE_DATABASE:
+			case USE:
 				callUseDatabase(cmdCall);
 				break;
 			case DESCRIBE:
@@ -406,7 +407,7 @@ public class CliClient {
 	private void callShowFunctions() {
 		final List<String> functions;
 		try {
-			functions = executor.listUserDefinedFunctions(context);
+			functions = executor.listFunctions(context);
 		} catch (SqlExecutionException e) {
 			printExecutionException(e);
 			return;
@@ -414,6 +415,7 @@ public class CliClient {
 		if (functions.isEmpty()) {
 			terminal.writer().println(CliStrings.messageInfo(CliStrings.MESSAGE_EMPTY).toAnsi());
 		} else {
+			Collections.sort(functions);
 			functions.forEach((v) -> terminal.writer().println(v));
 		}
 		terminal.flush();

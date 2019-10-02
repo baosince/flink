@@ -28,6 +28,7 @@ import org.apache.flink.runtime.io.network.NettyShuffleEnvironment;
 import org.apache.flink.runtime.io.network.NettyShuffleEnvironmentBuilder;
 import org.apache.flink.runtime.io.network.TaskEventDispatcher;
 import org.apache.flink.runtime.io.network.TestingConnectionManager;
+import org.apache.flink.runtime.io.network.buffer.BufferBuilderTestUtils;
 import org.apache.flink.runtime.io.network.buffer.FreeingBufferRecycler;
 import org.apache.flink.runtime.io.network.buffer.NetworkBuffer;
 import org.apache.flink.runtime.io.network.buffer.NetworkBufferPool;
@@ -41,6 +42,7 @@ import org.apache.flink.runtime.io.network.partition.ResultPartitionManager;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
 import org.apache.flink.runtime.io.network.partition.ResultSubpartition.BufferAndBacklog;
 import org.apache.flink.runtime.io.network.partition.ResultSubpartitionView;
+import org.apache.flink.runtime.io.network.util.TestBufferFactory;
 import org.apache.flink.runtime.io.network.util.TestTaskEvent;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID;
@@ -559,9 +561,51 @@ public class SingleInputGateTest extends InputGateTestBase {
 		}
 	}
 
+	@Test
+	public void testQueuedBuffers() throws Exception {
+		final NettyShuffleEnvironment network = createNettyShuffleEnvironment();
+
+		final ResultPartition resultPartition = new ResultPartitionBuilder()
+			.setResultPartitionManager(network.getResultPartitionManager())
+			.setupBufferPoolFactoryFromNettyShuffleEnvironment(network)
+			.build();
+
+		final SingleInputGate inputGate = createInputGate(network, 2, ResultPartitionType.PIPELINED);
+
+		final ResultPartitionID localResultPartitionId = resultPartition.getPartitionId();
+
+		final RemoteInputChannel remoteInputChannel = InputChannelBuilder.newBuilder()
+			.setChannelIndex(1)
+			.setupFromNettyShuffleEnvironment(network)
+			.setConnectionManager(new TestingConnectionManager())
+			.buildRemoteAndSetToGate(inputGate);
+
+		InputChannelBuilder.newBuilder()
+			.setChannelIndex(0)
+			.setPartitionId(localResultPartitionId)
+			.setupFromNettyShuffleEnvironment(network)
+			.setConnectionManager(new TestingConnectionManager())
+			.buildLocalAndSetToGate(inputGate);
+
+		try {
+			resultPartition.setup();
+			inputGate.setup();
+
+			remoteInputChannel.onBuffer(TestBufferFactory.createBuffer(1), 0, 0);
+			assertEquals(1, inputGate.getNumberOfQueuedBuffers());
+
+			resultPartition.addBufferConsumer(BufferBuilderTestUtils.createFilledFinishedBufferConsumer(1), 0);
+			assertEquals(2, inputGate.getNumberOfQueuedBuffers());
+		} finally {
+			resultPartition.release();
+			inputGate.close();
+			network.close();
+		}
+	}
+
 	/**
 	 * Tests that if the {@link PartitionNotFoundException} is set onto one {@link InputChannel},
-	 * then it would be thrown directly via {@link SingleInputGate#getNextBufferOrEvent()}. So we
+	 * then it would be thrown directly via {@link SingleInputGate#getNext()}. So we
 	 * could confirm the {@link SingleInputGate} would not swallow or transform the original exception.
 	 */
 	@Test

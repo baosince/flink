@@ -426,8 +426,8 @@ public class YarnClusterDescriptorTest extends TestLogger {
 			File libFile = temporaryFolder.newFile("libFile.jar");
 			File libFolder = temporaryFolder.newFolder().getAbsoluteFile();
 
-			Assert.assertFalse(descriptor.shipFiles.contains(libFile));
-			Assert.assertFalse(descriptor.shipFiles.contains(libFolder));
+			Assert.assertFalse(descriptor.getShipFiles().contains(libFile));
+			Assert.assertFalse(descriptor.getShipFiles().contains(libFolder));
 
 			List<File> shipFiles = new ArrayList<>();
 			shipFiles.add(libFile);
@@ -435,17 +435,17 @@ public class YarnClusterDescriptorTest extends TestLogger {
 
 			descriptor.addShipFiles(shipFiles);
 
-			Assert.assertTrue(descriptor.shipFiles.contains(libFile));
-			Assert.assertTrue(descriptor.shipFiles.contains(libFolder));
+			Assert.assertTrue(descriptor.getShipFiles().contains(libFile));
+			Assert.assertTrue(descriptor.getShipFiles().contains(libFolder));
 
 			// only execute part of the deployment to test for shipped files
 			Set<File> effectiveShipFiles = new HashSet<>();
 			descriptor.addEnvironmentFoldersToShipFiles(effectiveShipFiles);
 
 			Assert.assertEquals(0, effectiveShipFiles.size());
-			Assert.assertEquals(2, descriptor.shipFiles.size());
-			Assert.assertTrue(descriptor.shipFiles.contains(libFile));
-			Assert.assertTrue(descriptor.shipFiles.contains(libFolder));
+			Assert.assertEquals(2, descriptor.getShipFiles().size());
+			Assert.assertTrue(descriptor.getShipFiles().contains(libFile));
+			Assert.assertTrue(descriptor.getShipFiles().contains(libFolder));
 		}
 	}
 
@@ -459,11 +459,11 @@ public class YarnClusterDescriptorTest extends TestLogger {
 		testEnvironmentDirectoryShipping(ConfigConstants.ENV_FLINK_PLUGINS_DIR);
 	}
 
-	public void testEnvironmentDirectoryShipping(String environmentVariable) throws Exception {
+	private void testEnvironmentDirectoryShipping(String environmentVariable) throws Exception {
 		try (YarnClusterDescriptor descriptor = createYarnClusterDescriptor()) {
 			File libFolder = temporaryFolder.newFolder().getAbsoluteFile();
 			File libFile = new File(libFolder, "libFile.jar");
-			libFile.createNewFile();
+			assertTrue(libFile.createNewFile());
 
 			Set<File> effectiveShipFiles = new HashSet<>();
 
@@ -481,13 +481,13 @@ public class YarnClusterDescriptorTest extends TestLogger {
 			// only add the ship the folder, not the contents
 			Assert.assertFalse(effectiveShipFiles.contains(libFile));
 			Assert.assertTrue(effectiveShipFiles.contains(libFolder));
-			Assert.assertFalse(descriptor.shipFiles.contains(libFile));
-			Assert.assertFalse(descriptor.shipFiles.contains(libFolder));
+			Assert.assertFalse(descriptor.getShipFiles().contains(libFile));
+			Assert.assertFalse(descriptor.getShipFiles().contains(libFolder));
 		}
 	}
 
 	@Test
-	public void testEnvironmentEmptyPluginsShipping() throws Exception {
+	public void testEnvironmentEmptyPluginsShipping() {
 		try (YarnClusterDescriptor descriptor = createYarnClusterDescriptor()) {
 			File pluginsFolder = Paths.get(temporaryFolder.getRoot().getAbsolutePath(), "s0m3_p4th_th4t_sh0uld_n0t_3x1sts").toFile();
 			Set<File> effectiveShipFiles = new HashSet<>();

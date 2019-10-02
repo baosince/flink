@@ -19,9 +19,7 @@
 package org.apache.flink.sql.parser.ddl;
 
 import org.apache.flink.sql.parser.ExtendedSqlNode;
-import org.apache.flink.sql.parser.error.SqlParseException;
-
-import org.apache.flink.shaded.guava18.com.google.common.collect.Lists;
+import org.apache.flink.sql.parser.error.SqlValidateException;
 
 import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlCreate;
@@ -34,6 +32,7 @@ import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.parser.SqlParserPos;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -63,7 +62,7 @@ public class SqlCreateView extends SqlCreate implements ExtendedSqlNode {
 
 	@Override
 	public List<SqlNode> getOperandList() {
-		List<SqlNode> ops = Lists.newArrayList();
+		List<SqlNode> ops = new ArrayList<>();
 		ops.add(viewName);
 		ops.add(fieldList);
 		ops.add(query);
@@ -116,7 +115,7 @@ public class SqlCreateView extends SqlCreate implements ExtendedSqlNode {
 	}
 
 	@Override
-	public void validate() throws SqlParseException {
+	public void validate() throws SqlValidateException {
 		// no-op
 	}
 }

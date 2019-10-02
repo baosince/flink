@@ -80,9 +80,6 @@ class RelTimeIndicatorConverter(rexBuilder: RexBuilder) extends RelShuttle {
     val measures = matchRel.getMeasures
       .mapValues(_.accept(materializer))
 
-    val partitionKeys = matchRel.getPartitionKeys
-      .map(_.accept(materializer))
-      .map(materializerUtils.materialize)
     val interval = if (matchRel.getInterval != null) {
       matchRel.getInterval.accept(materializer)
     } else {
@@ -108,7 +105,7 @@ class RelTimeIndicatorConverter(rexBuilder: RexBuilder) extends RelShuttle {
       matchRel.getAfter,
       matchRel.getSubsets.asInstanceOf[java.util.Map[String, java.util.TreeSet[String]]],
       matchRel.isAllRows,
-      partitionKeys,
+      matchRel.getPartitionKeys,
       matchRel.getOrderKeys,
       interval)
   }
@@ -132,6 +129,30 @@ class RelTimeIndicatorConverter(rexBuilder: RexBuilder) extends RelShuttle {
         aggregate.getWindow,
         aggregate.getNamedProperties,
         convAggregate)
+
+    case windowTableAggregate: LogicalWindowTableAggregate =>
+      val correspondingAggregate = new LogicalWindowAggregate(
+        windowTableAggregate.getCluster,
+        windowTableAggregate.getTraitSet,
+        windowTableAggregate.getInput,
+        windowTableAggregate.getGroupSet,
+        windowTableAggregate.getAggCallList,
+        windowTableAggregate.getWindow,
+        windowTableAggregate.getNamedProperties)
+      val convAggregate = convertAggregate(correspondingAggregate)
+      LogicalWindowTableAggregate.create(
+        windowTableAggregate.getWindow,
+        windowTableAggregate.getNamedProperties,
+        convAggregate)
+
+    case tableAggregate: LogicalTableAggregate =>
+      val correspondingAggregate = LogicalAggregate.create(
+        tableAggregate.getInput,
+        tableAggregate.getGroupSet,
+        tableAggregate.getGroupSets,
+        tableAggregate.getAggCallList)
+      val convAggregate = convertAggregate(correspondingAggregate)
+      LogicalTableAggregate.create(convAggregate)
 
     case watermarkAssigner: LogicalWatermarkAssigner =>
       watermarkAssigner

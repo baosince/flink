@@ -86,6 +86,39 @@ class WindowAggregateTest extends TableTestBase {
   }
 
   @Test
+  def testWindowWrongWindowParameter1(): Unit = {
+    expectedException.expect(classOf[TableException])
+    expectedException.expectMessage(
+      "Window aggregate only support SECOND, MINUTE, HOUR, DAY as the time unit. " +
+        "MONTH and YEAR time unit are not supported yet.")
+
+    val sqlQuery =
+      "SELECT COUNT(*) FROM MyTable GROUP BY TUMBLE(proctime, INTERVAL '1' MONTH)"
+
+    util.verifyPlan(sqlQuery)
+  }
+
+  @Test
+  def testWindowWrongWindowParameter2(): Unit = {
+    expectedException.expect(classOf[TableException])
+    expectedException.expectMessage(
+      "Window aggregate only support SECOND, MINUTE, HOUR, DAY as the time unit. " +
+        "MONTH and YEAR time unit are not supported yet.")
+
+    val sqlQuery =
+      "SELECT COUNT(*) FROM MyTable GROUP BY TUMBLE(proctime, INTERVAL '2-10' YEAR TO MONTH)"
+
+    util.verifyPlan(sqlQuery)
+  }
+
+  @Test
+  def testIntervalDay(): Unit = {
+    val sqlQuery =
+      "SELECT COUNT(*) FROM MyTable GROUP BY TUMBLE(proctime, INTERVAL '35' DAY)"
+    util.verifyPlan(sqlQuery)
+  }
+
+  @Test
   def testTumbleFunction(): Unit = {
     val sql =
       """
@@ -295,4 +328,25 @@ class WindowAggregateTest extends TableTestBase {
     util.verifyPlan(sql)
   }
 
+  @Test
+  def testReturnTypeInferenceForWindowAgg(): Unit = {
+
+    val sql =
+      """
+        |SELECT
+        |  SUM(correct) AS s,
+        |  AVG(correct) AS a,
+        |  TUMBLE_START(rowtime, INTERVAL '15' MINUTE) AS wStart
+        |FROM (
+        |  SELECT CASE a
+        |      WHEN 1 THEN 1
+        |      ELSE 99
+        |    END AS correct, rowtime
+        |  FROM MyTable
+        |)
+        |GROUP BY TUMBLE(rowtime, INTERVAL '15' MINUTE)
+      """.stripMargin
+
+    util.verifyPlan(sql)
+  }
 }
